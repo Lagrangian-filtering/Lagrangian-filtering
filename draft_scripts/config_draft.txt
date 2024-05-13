@@ -1,5 +1,5 @@
-# CONFIGURATION FILE FOR SCRIPTS VISUALIZING_*.PY
-#################################################
+# CONFIGURATION FILE FOR SCRIPTS IN draft_scripts FOLDER
+################################################################
 
 [Directories]
 

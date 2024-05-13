@@ -19,9 +19,9 @@ from Analysis import *
 
 if __name__ == '__main__':
 
-    # ##################################################################
-    # EXTRACTING THE 1ST ADIABATIC COEFFICIENT LOCALLY
-    # ################################################################## 
+    # ##########################################################################################
+    # EXTRACTING THE 1ST ADIABATIC COEFFICIENT LOCALLY, AND COMPARING WITH EXPECTED VALUE
+    # ########################################################################################## 
     
     # READING SIMULATION SETTINGS FROM CONFIG FILE
     if len(sys.argv) == 1:
