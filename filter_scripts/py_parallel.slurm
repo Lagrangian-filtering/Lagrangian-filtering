@@ -11,7 +11,7 @@
 #SBATCH --mail-type=begin        
 #SBATCH --mail-type=fail
 #SBATCH --mail-type=end       
-#SBATCH --mail-user=celora@ice.csic.es
+#SBATCH --mail-user=
 
 
 #################################### 

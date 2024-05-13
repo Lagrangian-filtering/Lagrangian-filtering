@@ -14,7 +14,7 @@
 #SBATCH --mail-type=begin        # send email when job begins
 #SBATCH --mail-type=fail
 #SBATCH --mail-type=end          # send email when job ends
-#SBATCH --mail-user=celora@ice.csic.es
+#SBATCH --mail-user=
 
 
 ####################################
