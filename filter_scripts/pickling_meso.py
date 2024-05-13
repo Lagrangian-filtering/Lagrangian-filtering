@@ -16,6 +16,7 @@ if __name__ == '__main__':
     ####################################################################################################
     # # MAIN SCRIPT OF PIPELINE: SET UP THE MESO MODEL FROM SIM DATA (MESO-GRID + OBSERVERS + FILTER)
     # # AND DECOMPOSE THE RESIDUALS AS WELL AS COMPUTE DERIVATIVES AND QUANTITIES FOR MODELLING THEM 
+    # # FINALLY PICKLE SAVE THE INSTANCE FOR FUTURE USE.
     ####################################################################################################
     
     # READING SIMULATION SETTINGS FROM CONFIG FILE
