@@ -1695,6 +1695,8 @@ class resMHD2D(object):
     Idea: alternative meso_models (e.g. with different closures scheme) will 
     only have to change the method model_residuals and list of non_local_vars 
     (possibly but less likely decompose_structure_gridpoint)
+
+    TESTING THE BRANCHING HAS WORKED AS INTENDED
     """
     def __init__(self, micro_model, find_obs, filter, interp_method = 'linear'):
         """
