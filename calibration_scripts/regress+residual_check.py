@@ -15,7 +15,14 @@ from Visualization import *
 from Analysis import *
 
 if __name__ == '__main__':
-    
+    ###########################################################################
+    # # SCRIPT FOR PERFORMING REGRESSION OVER A TURBULENT COEFFICIENT. THEN THE 
+    # # MODEL PREDICTIONS FOR THIS ARE BUILT AND ALSO THE CORRESPONDING RESIDUAL
+    # # FINALLY A SCATTERPLOT IS PRODUCED, ALONG WITH SHOWING THE CORRESPONDING 
+    # # DISTRIBUTIONS
+    ###########################################################################
+
+
     # READING SIMULATION SETTINGS FROM CONFIG FILE
     if len(sys.argv) == 1:
         print(f"You must pass the configuration file for the simulations.")
@@ -124,18 +131,6 @@ if __name__ == '__main__':
         regressors_train = training_data
         regressors_test = test_data
 
-    # # fourth step: centralizing the coefficients data
-    # if centralize: 
-    #     tot_coeff = [np.stack((coeff_train, coeff_test))]
-    #     tot_regress = [np.stack((regressors_test[i], regressors_train[i])) for i in range(len(regressors))]
-
-    #     _, means = statistical_tool.centralize_dataset(tot_coeff + tot_regress)
-    #     coeff_mean = means[0]
-    #     regressors_means = means[1:]
-
-    #     coeff_train -= coeff_mean
-    #     for i in range(len(regressors_means)):
-    #         regressors_train[i] -= regressors_means[i]
 
     coeffs, std_errors = statistical_tool.scalar_regression(coeff_train, regressors_train, add_intercept=add_intercept)
     print('regression coeffs: {}\n'.format(coeffs))

@@ -19,6 +19,11 @@ from Analysis import *
 
 if __name__ == '__main__':
 
+    ##########################################################################################
+    # # SCRIPT TO COMPARE THE EFFECTIVE SHEAR VISCOSITY EXTRACTED IN A COMPONENT-WISE 
+    # # FASHION VS THE SQUARING OPTION 
+    ##########################################################################################
+
     # READING SIMULATION SETTINGS FROM CONFIG FILE
     if len(sys.argv) == 1:
         print(f"You must pass the configuration file for the simulations.")

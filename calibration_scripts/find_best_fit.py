@@ -19,12 +19,11 @@ from Analysis import *
 
 if __name__ == '__main__':
 
-    # ##################################################################
+    # #################################################################################
     # # GIVEN A VAR TO MODEL AND A LIST OF REGRESSORS, PERFORM THE REGRESSION 
     # # WITH ANY POSSIBLE COMBINATION OF REGRESSORS TAKEN FROM THE INPUT LIST
-    # # FIND THE ONE THAT BEST DESCRIBE THE QUANITY TO BE MODELLED, AND PRODUCE
-    # # A SCATTER PLOT FOR IT
-    # ################################################################## 
+    # # FIND THE ONE THAT BEST DESCRIBE THE QUANITY TO BE MODELLED
+    # ################################################################################# 
     
     # READING SIMULATION SETTINGS FROM CONFIG FILE
     if len(sys.argv) == 1:
@@ -45,61 +44,6 @@ if __name__ == '__main__':
 
     with open(MesoModelLoadFile, 'rb') as filehandle: 
         meso_model = pickle.load(filehandle)
-
-    # # RE-COMPUTING DERIVATIVES AND STUFF FOR MODELLING COEFFICIENTS
-    # # adding labels to dictionary for better figures
-    # entry_dic = {'D_n_tilde' : r'$\nabla_{a}\tilde{n}$'}
-    # meso_model.update_labels_dict(entry_dic)
-    # entry_dic = {'D_eps_tilde' : r'$\nabla_{a}\tilde{\varepsilon}$'}
-    # meso_model.update_labels_dict(entry_dic)
-    # entry_dic = {'n_tilde_dot' : r'$\dot{\tilde{n}}$'}
-    # meso_model.update_labels_dict(entry_dic)
-    # entry_dic = {'T_tilde_dot' : r'$\dot{\tilde{T}}$'}
-    # meso_model.update_labels_dict(entry_dic)
-    # entry_dic = {'sD_T_tilde': r'$D_{a}\tilde{T}$'}
-    # meso_model.update_labels_dict(entry_dic)
-    # entry_dic = {'sD_n_tilde': r'$D_{a}\tilde{n}$'}
-    # meso_model.update_labels_dict(entry_dic)
-    # entry_dic = {'sD_n_tilde_sq' : r'$D_{a}\tilde{n}D^{a}\tilde{n}$'}
-    # meso_model.update_labels_dict(entry_dic)
-    # entry_dic = {'dot_Dn_Theta' : r'$D_{a}\tilde{n}\Theta^{a}$'}
-    # meso_model.update_labels_dict(entry_dic)
-
-    # Nt = meso_model.domain_vars['Nt']
-    # Nx = meso_model.domain_vars['Nx']
-    # Ny = meso_model.domain_vars['Ny']
-
-    # meso_model.nonlocal_vars_strs = ['u_tilde', 'T_tilde', 'n_tilde', 'eps_tilde'] 
-    # meso_model.deriv_vars.update({'D_n_tilde' : np.zeros((Nt,Nx,Ny,3))})
-    # meso_model.deriv_vars.update({'D_eps_tilde' : np.zeros((Nt,Nx,Ny,3))})
-
-    # n_cpus = int(config['Find_best_fit_settings']['n_cpus'])
-    # start_time = time.perf_counter()
-    # meso_model.calculate_derivatives()
-    # time_taken = time.perf_counter() - start_time
-    # print('Finished computing derivatives (serial), time taken: {}\n'.format(time_taken), flush=True)
-
-    # start_time = time.perf_counter()
-    # meso_model.closure_ingredients_parallel(n_cpus)
-    # time_taken = time.perf_counter() - start_time
-    # print('Finished computing the closure ingredients in parallel, time taken: {}\n'.format(time_taken), flush=True)
-
-    # start_time = time.perf_counter()
-    # meso_model.EL_style_closure_parallel(n_cpus)
-    # time_taken = time.perf_counter() - start_time
-    # print('Finished computing the EL_style closure in parallel, time taken: {}\n'.format(time_taken), flush=True)
-
-    # start_time = time.perf_counter()
-    # meso_model.modelling_coefficients_parallel(n_cpus)
-    # time_taken = time.perf_counter() - start_time
-    # print('Finished computing quantities to model extracted coefficients, time taken: {}\n'.format(time_taken), flush=True)
-
-    # pickle_directory = config['Directories']['pickled_files_dir']
-    # filename = config['Filenames']['meso_pickled_filename']
-    # MesoModelPickleDumpFile = pickle_directory + filename
-    # with open(MesoModelPickleDumpFile, 'wb') as filehandle:
-    #     pickle.dump(meso_model, filehandle)
-
 
     # WHICH DATA YOU WANT TO RUN THE ROUTINE ON?
     dep_var_str = config['Find_best_fit_settings']['var_to_model']
@@ -239,106 +183,4 @@ if __name__ == '__main__':
 
     print(f'\nBest coefficients: {best_coeffs}')
 
-    # # RECONSTRUCTING THE BEST MODEL FOR TEST DATA
-    # actual_regressors = []
-    # actual_regressors_strs = []
-    # if centralize:
-    #     actual_regressors_means = []
-    # for i in range(len(regressors_strs)):
-    #     if best_regressors_combination[i] == True:
-    #         actual_regressors.append(regressors_test[i])
-    #         actual_regressors_strs.append(regressors_strs[i])
-    #         if centralize: 
-    #             actual_regressors_means.append(regressors_means[i])
-
-    # dep_var_model = np.zeros(dep_var_test.shape)
-    # if centralize:
-    #     for i in range(len(actual_regressors)):
-    #         dep_var_model += np.multiply(best_coeffs[i], actual_regressors[i]) 
-
-    # else:
-    #     if add_intercept:
-    #         dep_var_model += best_coeffs[0]
-    #         for i in range(len(actual_regressors)):
-    #             dep_var_model += np.multiply(best_coeffs[i+1], actual_regressors[i]) 
-    #     elif not add_intercept: 
-    #         for i in range(len(actual_regressors)):
-    #             dep_var_model += np.multiply(best_coeffs[i], actual_regressors[i]) 
-
-
-    # # FINALLY, PLOTTING THE BEST MODEL PREDICTIONS VS TEST DATA 
-    # ylabel = dep_var_str
-    # if hasattr(meso_model, 'labels_var_dict') and dep_var_str in meso_model.labels_var_dict.keys():
-    #     ylabel = meso_model.labels_var_dict[dep_var_str] 
-    # if preprocess_data['log_abs'][0] == 1: 
-    #     ylabel = r"$\log($" + ylabel + r"$)$"  
-    # statistical_tool.visualize_correlation(dep_var_model, dep_var_test, xlabel=r"$regression$ $model$", ylabel=ylabel)
-
-    # # Building the annotation box with the specifics of the model
-    # if centralize: 
-    #     text_for_box = r"$Model$ $coeff.s$, $means:$" + "\n"
-    #     add_text = dep_var_str + " :  , "  
-    #     if hasattr(meso_model, 'labels_var_dict') and dep_var_str in meso_model.labels_var_dict.keys():
-    #         add_text = meso_model.labels_var_dict[dep_var_str] + " :  , "
-    #     sign, val = int(np.sign(dep_var_mean)), '%.3f' %np.abs(dep_var_mean)
-    #     coeff_for_text_box = r"$+{}$".format(val) if sign == 1 else r"$-{}$".format(val)
-    #     add_text += coeff_for_text_box  
-    #     text_for_box += add_text    
-
-    #     for i in range(len(actual_regressors_strs)):
-    #         add_text = "\n" + actual_regressors_strs[i] + " :  "
-    #         if hasattr(meso_model, 'labels_var_dict') and actual_regressors_strs[i] in meso_model.labels_var_dict.keys():
-    #             add_text = "\n" + meso_model.labels_var_dict[actual_regressors_strs[i]] + " :  "
-
-    #         sign, val = int(np.sign(best_coeffs[i])), '%.3f' %np.abs(best_coeffs[i]) 
-    #         coeff_for_text_box = r"$+{}$".format(val) if sign == 1 else r"$-{}$".format(val)
-    #         add_text += coeff_for_text_box 
-            
-    #         sign, val = int(np.sign(actual_regressors_means[i])), '%.3f' %np.abs(actual_regressors_means[i]) 
-    #         coeff_for_text_box = r", $+{}$".format(val) if sign == 1 else r", $-{}$".format(val)  
-    #         add_text += coeff_for_text_box 
-
-    #         text_for_box += add_text
-
-
-    # else: 
-    #     text_for_box = r"$Model$ $coeff.s:$" + "\n"
-    #     if add_intercept:
-    #         sign, val = int(np.sign(best_coeffs[0])), '%.3f' %np.abs(best_coeffs[0]) 
-    #         text_for_box += r'$offset$' +' :  ' 
-    #         coeff_for_text_box = r"$+{}$".format(val) if sign == 1 else r"$-{}$".format(val)
-    #         text_for_box += coeff_for_text_box 
-    #     else:
-    #         best_coeffs = [0] + best_coeffs
-
-    #     for i in range(len(actual_regressors_strs)):
-    #         sign, val = int(np.sign(best_coeffs[i+1])), '%.3f' %np.abs(best_coeffs[i+1]) 
-    #         coeff_for_text_box = r"$+{}$".format(val) if sign == 1 else r"$-{}$".format(val)
-
-    #         add_text = "\n" + actual_regressors_strs[i] + " :  "
-    #         if hasattr(meso_model, 'labels_var_dict') and actual_regressors_strs[i] in meso_model.labels_var_dict.keys():
-    #             add_text = "\n" + meso_model.labels_var_dict[actual_regressors_strs[i]] + " :  "
-            
-    #         add_text += coeff_for_text_box 
-    #         text_for_box += add_text
-
-    # bbox_args = dict(boxstyle="round", fc="0.95")
-    # plt.annotate(text=text_for_box, xy = (0.99,0.1), xycoords='figure fraction', bbox=bbox_args, ha="right", va="bottom", fontsize = 8)
-
-
-    # # Saving the figure
-    # saving_directory = config['Directories']['figures_dir']
-    # if centralize: 
-    #     filename = f'/CentredBestFit_{dep_var_str}_vs'
-    # else:
-    #     filename = f'/BestFit_{dep_var_str}_vs'
     
-    # for i in range(0,len(regressors_strs)):
-    #     filename += f'_{regressors_strs[i]}'
-    # format = str(config['Regression_settings']['format_fig'])
-    # filename += "." + format
-    # dpi = None
-    # if format == 'png':
-    #     dpi = 400
-    # plt.savefig(saving_directory + filename, format=format, dpi=dpi)
-    # print(f'Finished regression and scatter plot for {dep_var_str}, saved as {filename}\n\n')

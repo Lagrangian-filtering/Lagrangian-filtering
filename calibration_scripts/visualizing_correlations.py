@@ -15,9 +15,9 @@ from Analysis import *
 
 if __name__ == '__main__':
 
-    # ##################################################################
-    # #CORRELATION PLOTS: RESIDUALS VS CORRESPONDING CLOSURE INGREDIENTS
-    # ##################################################################
+    # #################################################################################
+    # # SCRIPT TO PRODUCE CORRELATION PLOT FOR QUANTITIES GIVEN IN CONFIG FILE
+    # #################################################################################
     
     # READING SIMULATION SETTINGS FROM CONFIG FILE
     if len(sys.argv) == 1:

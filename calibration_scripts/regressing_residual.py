@@ -18,7 +18,8 @@ if __name__ == '__main__':
 
     # ##################################################################
     # # RUN THE REGRESSION ROUTINE GIVEN DEPENDENT DATA AND EXPLANATORY 
-    # # VARS. DATA IS PRE-PROCESSED 
+    # # VARS. DATA IS PRE-PROCESSED. FINALLY, A SCATTERPLOT COMPARING THE
+    # # GIVEN DATA VS THE MODEL PREDICTIONS IS PRODUCED
     # ################################################################## 
     
     # READING SIMULATION SETTINGS FROM CONFIG FILE
