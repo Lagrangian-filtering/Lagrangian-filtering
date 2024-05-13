@@ -1,6 +1,6 @@
 # LAGRANGIAN FILTERING 
 
-This is the first __fully covariant filtering scheme__, for applications to relativistic hydrodynamic turbulence. 
+This is the first implementatoin of a __fully covariant filtering scheme__, for applications to relativistic hydrodynamic turbulence. 
 It has been developed by Dr. Thomas Celora, Mr. Marcus J. Hatton and Dr. Ian Hawke. The codebase is meant to be used to investigate models of relativistic turbulent flows, and calibrate sugbgrid models in a fully-covariant fashion. In particular, this implies that results obtained within this framework may be lifted into an arbitrary, curved spacetime. This makes it well-suited for studies of, for example, binary neutron star mergers via numerical relativity simulations.  
 
 Related publications: 
@@ -18,7 +18,7 @@ The code is entirely developed in the Python language, so a normal Python interp
 You should also have data (in HDF5 format) produced by a numerical box simulation of hydrodynamics turbulence. For example, you may get this by running one of the examples of the [METHOD](https://github.com/AlexJamesWright/METHOD/tree/master) codebase. More information on how such data should be stored for running it through the pipeline can be found in [Lagrangian filtering]().
 
 ## HOW TO USE IT
-The code is developed in a pipeline-like fashion. The main classes are in the master_files folder: classes for representing simulations' and filtered data, filtering classes and classes for analyising and calibrating a closure scheme. 
+The code is developed in a pipeline-like fashion. The main classes are in the `master_files` folder: classes for representing simulations' and filtered data, filtering classes and classes for analyising and calibrating a closure scheme. 
 
 As an example, filter_scripts contains scripts for running simulation data through the filtering pipeline and visualizing the outcome. 
 The configuration file `config_filter.txt` should be modified accordingly to set the relevant parameters for the simulations. 
