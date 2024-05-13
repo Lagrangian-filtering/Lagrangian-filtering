@@ -16,9 +16,16 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import random
 
 class Base(object):
+    """
+    Base class containing basic routines that are used by multiple 
+    other classes. 
+    """
+
     @staticmethod
     def Mink_dot(vec1, vec2):
         """
+        Returns the dot product (Minkowski metric) of input vectors 'vec1', 'vec2'
+
         Parameters:
         -----------
         vec1, vec2 : list of floats (or np.arrays)
@@ -51,27 +58,6 @@ class Base(object):
         """
         W = 1 / np.sqrt(1-np.sum(spatial_vels**2))
         return W * np.insert(spatial_vels,0,1.0)
-
-    @staticmethod
-    def project_tensor(vector1_wrt, vector2_wrt, to_project):
-        """
-        """
-        return np.inner(vector1_wrt,np.inner(vector2_wrt,to_project))
-    
-    
-    @staticmethod
-    def orthogonal_projector(u, metric):
-        """
-        Returns: 
-        --------
-        Orthogonal projector wrt vector u
-
-        Notes:
-        ------
-        The vector u must be time-like
-        """
-        return metric + np.outer(u,u)    
- 
 
     """
     A pair of functions that work in conjuction (thank you stack overflow).
@@ -144,7 +130,11 @@ class Base(object):
         return inner
 
 class MySymLogPlotting(object):
-
+    """
+    Class containing useful routines for plotting using a symmetric logarithmic norm and a divergent colormap. 
+    In particular, we want to make sure the norm is set-up in such a way that the midvalue is at the center
+    of a divergent colormap. The scaling to above/below the mid-value is different to ensure this.  
+    """
     @staticmethod
     def symlog_num(num):
         """
@@ -361,7 +351,7 @@ class MySymLogPlotting(object):
 
 class MyThreeNodesNorm(mpl.colors.Normalize):
     """
-    Sub-classing colors.Normalize: the norm has three inner nodes plus the extrema. 
+    Sub-classing colors.Normalize: the norm has three inner nodes plus the extrema.
     Within each segment (delimited by a node or extrema) you have linear interpolation. 
     
     Should be used when plotting quantities that are both positive and negative, and you

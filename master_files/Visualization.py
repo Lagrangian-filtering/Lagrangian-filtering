@@ -20,7 +20,9 @@ from MesoModels import *
 from Filters import * 
 
 class Plotter_2D(object):
-    
+    """
+    Class for plotting micro or meso-model data (2+1 dimensional models).
+    """
     def __init__(self, screen_size = [11.97, 8.36]):
         """
         Parameters: 
@@ -510,58 +512,3 @@ class Plotter_2D(object):
         fig.tight_layout()
         # plt.subplot_tool()
         return fig
-
-
-
-if __name__ == '__main__':
-    
-    FileReader = METHOD_HDF5('../Data/test_res100/')
-    micro_model = IdealMHD_2D()
-    FileReader.read_in_data(micro_model)
-    micro_model.setup_structures()
-
-
-    visualizer = Plotter_2D([11.97, 8.36])
-    print('Finished initializing')
-
-    # TESTING GET_VAR_DATA
-    ######################  
-    # var = 'BC'
-    # components = (0,2)
-    # data1= visualizer.get_var_data(micro_model, var, 1.502, [0.3, 0.4], [0.3,0.4], component_indices=components)[0]
-    # data, extent= visualizer.get_var_data(micro_model, var, 1.502, [0.3, 0.4], [0.3,0.4], component_indices=components, method='interpolate', interp_dims=(20,20))
-    # print(extent)
-
-    # TESTING PLOT_VARS
-    ###################
-    # vars = ['BC', 'vx', 'vy', 'Bz', 'p', 'W']
-    # components = [(0,), (), (), (), (), ()]
-    # model = micro_model
-    # visualizer.plot_vars(model, vars, 1.502, [0.01, 0.98], [0.01, 0.98], components_indices=components)
-    # visualizer.plot_vars(model, vars, 1.502, [0.01, 0.98], [0.01, 0.98], method = 'interpolate', interp_dims=(100,100), components_indices=components)
-
-
-    # TESTING PLOT_VAR_MODEL_COMPARISON
-    ###################################
-    find_obs = FindObs_drift_root(micro_model, 0.001)
-    filter = spatial_box_filter(micro_model, 0.003)
-    meso_model = resMHD2D(micro_model, find_obs, filter)
-    ranges = [0.2, 0.25]
-    meso_model.setup_meso_grid([[1.501, 1.503],ranges, ranges], coarse_factor=1)
-    meso_model.find_observers()
-    meso_model.filter_micro_variables()
-
-    print("Finished filtering")
-
-    vars = [['BC'], ['BC']]
-    models = [micro_model, meso_model]
-    components = [[(0,)],[(0,)]]
-    norms = [['log'], ['log'], ['symlog']]
-    cmaps=None
-    # cmaps = [['seismic'], ['seismic'], ['seismic']]
-    # smaller_ranges = [ranges[0]+0.01, ranges[1]- 0.01] # Needed to avoid interpolation errors at boundaries
-    # visualizer.plot_var_model_comparison(models, var, 1.502, smaller_ranges, smaller_ranges, \
-    #                                      method='interpolate', interp_dims=(30,30), component_indices=component)
-    visualizer.plot_vars_models_comparison(models, vars, 1.502, ranges, ranges, components_indices=components, diff_plot=True, rel_diff = False, 
-                                           norms=norms, cmaps=cmaps)
-    plt.show()

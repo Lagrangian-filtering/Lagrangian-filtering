@@ -14,7 +14,8 @@ class METHOD_HDF5(object):
     def __init__(self, directory, fewer_snaps=False, smaller_list=None):
         """
         Set up the list of files (from hdf5) and dictionary with dataset names
-        in the hdf5 file. 
+        in the hdf5 file. Use 'fewer_snaps' and 'smaller_list' if the directory 
+        contains more snapshot than needed. 
 
         Parameters
         ----------
@@ -22,11 +23,11 @@ class METHOD_HDF5(object):
             the filenames in the directory have to be incremental (sorted is used)
 
         fewer_snaps: bool
-            set to true if you want micromodel to store fewer snapshots than can be found
-            in directory 
+            set to true if you want to store fewer snapshots than found in directory 
         
         smaller_list: list
             indices to be retained of list orderd via sorted(glob.glob(directory+str('*.hdf5')))
+
         """ 
         hdf5_filenames = sorted(glob.glob(directory+str('*.hdf5')))
         if fewer_snaps:
@@ -44,6 +45,9 @@ class METHOD_HDF5(object):
             self.hdf5_keys[key] = list(self.hdf5_files[0][key].keys())
 
     def get_hdf5_keys(self):
+        """
+        Return the keys of the dictionary with the stored data from HDF5
+        """
         return self.hdf5_keys
 
     def read_in_data(self, micro_model):   
@@ -52,8 +56,14 @@ class METHOD_HDF5(object):
 
         Parameters
         ----------
-        micro_model: class MicroModel 
+        micro_model: instance of a MicroModel 
             strs in micromodel have to be the same as hdf5 files output from METHOD.
+
+        Notes 
+        -----
+            use and adapt translating dictionary if you want to store data in micromodel 
+            using different keys than those from METHOD.
+
         """ 
 
         self.translating_prims = dict.fromkeys(micro_model.get_prim_strs())
@@ -127,12 +137,18 @@ class METHOD_HDF5(object):
 
     def read_in_data_HDF5_missing_xy(self, micro_model):   
         """
-        Store data from files into micro_model 
+        Store data from files into micro_model. To be used if METHOD output does 
+        not contain explicitly the grid points
 
         Parameters
         ----------
-        micro_model: class MicroModel 
+        micro_model: instance of a MicroModel 
             strs in micromodel have to be the same as hdf5 files output from METHOD.
+
+        Notes 
+        -----
+            use and adapt translating dictionary if you want to store data in micromodel 
+            using different keys than those from METHOD.
         """ 
 
         self.translating_prims = dict.fromkeys(micro_model.get_prim_strs())
@@ -167,7 +183,7 @@ class METHOD_HDF5(object):
                 print(f'{method_str} is not in the hdf5 dataset: check Auxiliary/')
  
         # As METHOD saves endTime, the time variables (and points) need to be dealt with separately
-        # Similar is for x,y which are not stored properly in by METHOD parallelSaveDataHDF5
+        # Similar is for x,y which are not stored by METHOD parallelSaveDataHDF5
         for dom_var_str in micro_model.domain_int_strs: 
             try: 
                 if dom_var_str == 'nt': 
@@ -205,25 +221,12 @@ class METHOD_HDF5(object):
 
         micro_model.domain_vars['x'] = np.zeros(micro_model.domain_vars['nx'])
         for i in range(len(micro_model.domain_vars['x'])):
-            # micro_model.domain_vars['x'][i] = (micro_model.domain_vars['xmax']- micro_model.domain_vars['xmin']) / (2 * micro_model.domain_vars['nx']) + \
-            #                                     i * micro_model.domain_vars['dx']
             micro_model.domain_vars['x'][i] = micro_model.domain_vars['xmin'] + i * micro_model.domain_vars['dx']
             
         micro_model.domain_vars['y'] = np.zeros(micro_model.domain_vars['ny'])
         for i in range(len(micro_model.domain_vars['y'])):
-            # micro_model.domain_vars['y'][i] = (micro_model.domain_vars['ymax']- micro_model.domain_vars['ymin']) / (2 * micro_model.domain_vars['ny']) + \
-            #                                     i * micro_model.domain_vars['dy']
             micro_model.domain_vars['y'][i] = micro_model.domain_vars['ymin'] + i * micro_model.domain_vars['dy']
 
         micro_model.domain_vars['points'] = [micro_model.domain_vars['t'], micro_model.domain_vars['x'], \
                                              micro_model.domain_vars['y']]
 
-
-if __name__ == '__main__':
-
-    from MicroModels import * 
-
-    FileReader = METHOD_HDF5('./Data/test_res100/')
-    MicroModel = IdealMHD_2D()
-    FileReader.read_in_data(MicroModel)
-    # FileReader.read_in_data_HDF5_missing_xy(MicroModel)

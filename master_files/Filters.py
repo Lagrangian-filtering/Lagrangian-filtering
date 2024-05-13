@@ -48,7 +48,7 @@ class FindObs_flux_min(object):
         
     def get_tetrad_from_U(self, U):
         """
-        Build tetrad orthogonal to unit velocity with from complete velocity vector
+        Build tetrad orthogonal to normalized velocity U.
 
         Parameters:
         -----------
@@ -79,7 +79,8 @@ class FindObs_flux_min(object):
 
     def get_tetrad_from_vels(self, spatial_vels):
         """
-        Build tetrad orthogonal to unit velocity with spatial velocities spatial_vels
+        Build normalized four-velocity from spatial components, then pass this and
+        return the result of get_tetrad_from_U()
 
         Parameters:
         -----------
@@ -154,7 +155,7 @@ class FindObs_flux_min(object):
         Alternative for computing manually the flux residual, using the Gauss
         Legendre method. 
 
-         Parameters:
+        Parameters:
         -----------
         spatial_vels: list of d (spatial dimension) floats, spatial coord of vel
         
@@ -170,6 +171,8 @@ class FindObs_flux_min(object):
         ------
         Much faster than method based on inbuilt dblquad. Should be more accurate 
         than the one based on linearly spaced points. 
+
+        Order of Gauss-Legendre quadrature up to 5.
         """
         ps1d = []
         ws1d = []
@@ -309,7 +312,8 @@ class FindObs_flux_min(object):
             string for the method used to compute the flux, must be chosen within
             ['gauss', 'linear', 'inbuilt']
 
-        initial_guess: DEPRECATED, list of d floats: the spatial velocities of the initial guess
+        initial_guess: DEPRECATED list of d floats
+            the spatial velocities of the initial guess
             if the number of spatial vels passed does not match the micro_model dimensionality, the 
             pointwise velocity is used instead. 
 
@@ -349,7 +353,7 @@ class FindObs_flux_min(object):
     
     def find_observers_points(self, points, flux_str = "gauss"):
         """
-        Key function: minimize the flux residual and find the observers for points.
+        Key function: minimize the flux residual and find the observers at the input 'points'.
         flux_str determines the method to compute the flux residual.
 
         Parameters:
@@ -394,7 +398,7 @@ class FindObs_flux_min(object):
     def find_observers_ranges(self, num_points, ranges, flux_str = "gauss" ): 
         """
         Key function: minimize the flux_residual and find the observers for points
-        in the ranges. flux_str determines the method to compute the flux residual. 
+        in the input 'ranges'. flux_str determines the method to compute the flux residual. 
 
         Parameters:
         -----------
@@ -463,7 +467,8 @@ class FindObs_drift_root(object):
     
     def get_tetrad_from_vels(self, spatial_vels):
         """
-        Build tetrad orthogonal to unit velocity with spatial velocities spatial_vels
+        First construct unit four-velocity from spatial velocities. 
+        Then build tetrad orthogonal to unit four-velocity.
 
         Parameters:
         -----------
@@ -547,7 +552,7 @@ class FindObs_drift_root(object):
 
         point: list of d+1 floats ordered as (t,x,y,...), the centre of the box
 
-        order: integer, the order of the Gauss-Legendre approximation
+        order: integer, the order of the Gauss-Legendre approximation (up to 5)
 
         Returns:
         --------
@@ -791,9 +796,9 @@ class FindObs_drift_root(object):
 
 class FindObs_root_parallel(object):
     """
-    Parallel version (streamlined) of FindObs_drift_root
+    (Streamlined) parallel version of FindObs_drift_root
     Currently: based on gauss-quadrature with order 3 
-               interpolation of quantities from micro_model.
+               micro_model quantities are interpolated.
     """
     def __init__(self, micro_model, box_len):
         """
@@ -823,7 +828,8 @@ class FindObs_root_parallel(object):
     @staticmethod
     def get_tetrad_from_vels(spatial_vels):
         """
-        Build tetrad orthogonal to unit velocity with spatial velocities spatial_vels
+        First build unit four-velocity from spatial vels. 
+        Then build tetrad orthogonal to unit velocity.
 
         Parameters:
         -----------
@@ -877,7 +883,6 @@ class FindObs_root_parallel(object):
         micro_spatial_dims = len(grid)-1
         micro_BC = BC
         box_len = L
-        # print(f'Baryon current passed to initializer: {micro_BC}')
 
         ps1d = [0, + np.sqrt(3/5), - np.sqrt(3/5)]
         ws1d = [8./9. , 5./9. , 5./9.]
@@ -903,8 +908,8 @@ class FindObs_root_parallel(object):
     def find_observer_Gauss(point, pos_in_list_points, initial_guess=None):
         """
         CPU-bound task to be run in parralel. 
-        The routine combines what has been split into many in the serial 
-        version of this class. 
+        The task is a combination of what has been split into multiple methods 
+        in the serial version of this class. 
 
         Parameters:
         -----------
@@ -985,7 +990,7 @@ class FindObs_root_parallel(object):
 
     def find_observers_parallel(self, points, n_cpus, initial_guesses=None):
         """
-        Method to run find_observer_Gauss in parallel on a list of points
+        Wrapper of find_observer_Gauss(): execute task in parallel on a list of points
 
         Parameters:
         -----------
@@ -993,6 +998,9 @@ class FindObs_root_parallel(object):
 
         n_cpus: int
             number of processes
+
+        initial_guesses: DEPRECATED, the initial guesses at each point
+            if not passed, the point-wise velocity from micro-model is used.
 
         Returns:
         --------
@@ -1100,8 +1108,13 @@ class spatial_box_filter(object):
         U: np.array of shape (1+spatial_dims,)
 
         Returns:
+        --------
         list of spatial_dims numpy arrays of shape (1+spatial_dims,) 
         which complete U to a orthonormal tetrad
+
+        Notes:
+        ------
+        only the spatial legs of the tetrad are returned
         """
         es =[]
         for _ in range(self.spatial_dims):
@@ -1120,8 +1133,8 @@ class spatial_box_filter(object):
     def filter_var_point(self, var_str, point, observer, sample_method = "gauss", num_points = 3):
         """
         First complete the observer to a tetrad at the point. Then build coords for 
-        sample points in the spatial directions adapted to observer. Then approximate the 
-        filter integral as a Riemann sum.
+        sample points in the spatial directions adapted to observer. Finally, approximate 
+        the filter integral as a Riemann sum.
 
         Parameters:
         -----------
@@ -1230,7 +1243,7 @@ class spatial_box_filter(object):
 
     def filter_var_manypoints(self, var_str, points, observers, sample_method = "gauss", num_points = 3):
         """
-        Method to filter a variable in the micro_model given a list of points and observers.
+        Wrapper of filter_var_point(): filter a variable in the micro_model given a list of points and observers.
 
         Parameters:
         -----------
@@ -1316,14 +1329,12 @@ class spatial_box_filter(object):
 
 class box_filter_parallel(object):
     """
-    Parallel version (streamlined) of spatial_box_filter
+    Streamlined parallel version of spatial_box_filter
     Currently: based on gauss-quadrature with order 3 
-               interpolation of quantities from micro_model.
+               Micro_model quantities are interpolated.
     """
     def __init__(self, micro_model, filter_width):
         """
-        Constructor
-
         Parameters:
         -----------
         micro_model: instance of a micro_model class
@@ -1419,8 +1430,8 @@ class box_filter_parallel(object):
     def filter_var_point_gauss(point, observer, pos_in_list_points):
         """
         CPU-bound task to be run in parralel. 
-        The routine combines what has been split into many in the serial 
-        version of this class. 
+        The task is a combination of what has been split into multiple methods 
+        in the serial version of this class. 
 
         Parameters:
         -----------
@@ -1486,8 +1497,8 @@ class box_filter_parallel(object):
 
     def filter_var_parallel(self, points_observers, var, n_cpus):
         """
-        Method to run filter_vars_point_gauss in parallel given a list of points, 
-        observers and vars. 
+        Wrapper of filter_var_point_gauss(): execute the task in parallel with n_cpus processes 
+        given a list of points, observers and vars.
 
         Parameters: 
         -----------
@@ -1532,110 +1543,4 @@ class box_filter_parallel(object):
                 filtered_var.append(result[1])
         
         return position_in_list, filtered_var
-
-
-if __name__ == '__main__':
-
-    ########################################################
-    # TESTING SERIAL IMPLEMENTATION
-    ######################################################## 
-    # CPU_start_time = time.process_time()
-
-    # FileReader = METHOD_HDF5('../Data/test_res100/')
-    # micro_model = IdealMHD_2D()
-    # FileReader.read_in_data(micro_model) 
-    # micro_model.setup_structures()
-
-    # find_obs = FindObs_drift_root(micro_model, 0.001)
-    # # find_obs = FindObs_flux_min(micro_model, 0.001)
-    # filter = spatial_box_filter(micro_model, 0.003)
-
-    # vars = ['BC','SETfl', 'Fab', 'SETem']
-    # points = [[1.502,0.3,0.5],[1.503,0.4,0.2]]
-    # observers = find_obs.find_observers_points(points)[0][1]
-
-    # for i in range(len(points)):   
-    #     for  var in vars:   
-    #         CPU_start_time = time.process_time()
-    #         filtvar1 = filter.filter_var_point_inbuilt(var, points[i], observers[i])
-    #         inbuilt_time = time.process_time() - CPU_start_time
-
-    #         CPU_start_time = time.process_time()
-    #         filtvar2 = filter.filter_var_point(var, points[i], observers[i])
-    #         gauss_time = time.process_time() - CPU_start_time
-    #         print(f"CPU time speed-up to filter {var} with Gauss method at {points[i]} is {inbuilt_time/gauss_time}. ")
-    #         print(f'Filtered quantity with Gauss is \n {filtvar2}')
-    #         print(f"Difference with method based on inbuilt integration is: \n {filtvar1[0] - filtvar2}")  
-    #         print('\n************************\n')
-
-    ########################################################
-    # TESTING PARALLEL IMPLEMENTATION
-    ########################################################
-    FileReader = METHOD_HDF5('../Data/test_res100/')
-    micro_model = IdealHD_2D()
-    FileReader.read_in_data(micro_model) 
-    micro_model.setup_structures()
-
-    # setting up the points for testing - pass all the points within a range
-    t_range = [1.502, 1.504]
-    x_range = [0.05, 0.15]
-    y_range = [0.05, 0.15]
-
-    patch_min = [t_range[0], x_range[0], y_range[0]]
-    patch_max = [t_range[1], x_range[1], y_range[1]]
-    idx_mins = Base.find_nearest_cell(patch_min, micro_model.domain_vars['points'])
-    idx_maxs = Base.find_nearest_cell(patch_max, micro_model.domain_vars['points'])
-
-    ts = micro_model.domain_vars['t'][idx_mins[0]:idx_maxs[0]]
-    xs = micro_model.domain_vars['x'][idx_mins[1]:idx_maxs[1]]
-    ys = micro_model.domain_vars['y'][idx_mins[2]:idx_maxs[2]]
-    
-    points = []
-    for elem in product(ts,xs,ys):
-        points.append(list(elem))
-
-    print('Number of points: {}'.format(len(points)))
-
-    # Now find observers - serial version
-    # start_time = time.perf_counter()
-    # find_obs_serial = FindObs_drift_root(micro_model, 0.001)
-    # observers = find_obs_serial.find_observers_points(points)
-    # serial_time = time.perf_counter() - start_time
-    # print('Serial time: {}\n'.format(serial_time))
-
-    # Now find observers - parallel version
-    n_cpus = os.cpu_count()
-    start_time = time.perf_counter()
-    find_obs_parallel = FindObs_root_parallel(micro_model, 0.001)
-    point = points[0]
-    result, failed = find_obs_parallel.find_observers_parallel(points, n_cpus)
-    print('Number of points failed: {}'.format(len(failed)))
-    parallel_time = time.perf_counter() - start_time
-    print('Finished finding observers. Parallel time: {}\n'.format(parallel_time))
-    # print('Speed-up factor: {}\n'.format(serial_time/parallel_time))
-
-
-    observers = result[1]
-    vars = ['BC', 'SET']
-    # Filtering serial
-    # start_time = time.perf_counter()
-    # serial_filter = spatial_box_filter(micro_model, 0.003)
-    # for var in vars: 
-    #     serial_filter.filter_var_manypoints(var, points, observers)
-    # serial_time = time.perf_counter() - start_time
-    # print('Finished filtering in serial, time-taken: {}'.format(serial_time))
-
-    # Preparing args for parallel filter routine
-    args_list = []
-    for elem in zip(points, observers):
-        # args_list.append([*elem, vars])
-        args_list.append(tuple(elem))
-
-    start_time = time.perf_counter()
-    parallel_filter = box_filter_parallel(micro_model, 0.003)
-    for var in vars:
-        parallel_filter.filter_var_parallel(args_list, var, n_cpus)
-    parallel_time = time.perf_counter() - start_time
-    print('Finished filtering in parallel, time-taken: {}'.format(parallel_time))
-    # print('Speed-up factor: {}\n'.format(serial_time/parallel_time))
 

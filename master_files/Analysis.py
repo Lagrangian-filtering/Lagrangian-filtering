@@ -39,7 +39,7 @@ class CoefficientsAnalysis(object):
     """
     def __init__(self): #, visualizer, spatial_dims):
         """
-        Nothing as yet...
+        Constructor does not do much, if not setting the plt.rc parameters.
 
         Returns
         -------
@@ -134,10 +134,8 @@ class CoefficientsAnalysis(object):
 
     def get_pos_or_neg_mask(self, pos_or_neg, array):
         """
-        NOT USED ANYMORE!!!!!!
-        
-        Function that return the mask that would be applied to an array in order to select 
-        positive or negative values
+        Takes input 'array' and make a copy of array masking those entries that are either positive or negative.
+        Then return the corresponding mask
 
         Parameters:
         -----------
@@ -218,9 +216,11 @@ class CoefficientsAnalysis(object):
 
         preprocess_data: dictionary
             each value of the dictionary must be a list long as the arrays passed (checked for)
-            Expected keys are: 
-
+            Keys checked for (in order) are: 
+            
             'value_ranges': value correspond to list of min, max to be considered 
+
+            'sqrt' is 1 if you want to take the sqrt of the data
 
             'log_abs' is 1 if you want to take the logarithm of the (absolute) data 
 
@@ -386,6 +386,16 @@ class CoefficientsAnalysis(object):
 
     def centralize_dataset(self, list_of_arrays):
         """
+        Take an input list of arrays, and return the de-meaned data plus the mean values for each
+
+        Parameters:
+        -----------
+
+        list_of_arrays: the data to be centralized (or de-meaned)
+
+        Returns:
+        --------
+        centralized data, means
         """
         print('Centralizing the dataset')
         # Checking data is compatible
@@ -683,10 +693,11 @@ class CoefficientsAnalysis(object):
         xlabel, ylabel: strs
             labels for the quantites plotted
 
-        ranges: list of lists of 2 floats
-            mins and max in each direction
+        weights: nd.arrays()
+            the weights corresponding to each x,y pair
 
-        model_points: list of lists containing the gridpoints in each direction
+        remaining parameters: 
+            additional information for customizing the plot
 
         
         Returns:
@@ -751,8 +762,7 @@ class CoefficientsAnalysis(object):
         Method that returns an instance of PairGrid of correlation plots for a list of vars.
         Plotted is: 
             daigonal: univariate histogram (with kde superimposed)
-            upper triangle: scatteplots
-            lower triangle: bivariate kde(s)
+            lower triangle: scatterplots with super-imposed histogram and kde
 
         Possibility to cut data to lie within ranges.
 
@@ -1088,164 +1098,30 @@ class CoefficientsAnalysis(object):
 
         return fig
 
-    def scatter_distrib_compare(self, x, y, figsize=[9,4]):
-        """
-        WORK IN PROGRESS
-        """
-        if x.shape != y.shape: 
-            print('The two arrays passed are not compatible, exiting')
-            return None
     
-        X = x.flatten()
-        Y = y.flatten()
-
-        # fig, axes = plt.subplots(1,3, figsize=figsize)
-        fig, axes = plt.subplots(1,2, figsize=figsize)
-        axes = axes.flatten()
-
-
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message='is_categorical_dtype is deprecated')
-            warnings.filterwarnings('ignore', message='use_inf_as_na option is deprecated')
-
-            sns.set_theme(style="dark")
-            sns.scatterplot(x=X, y=Y, s=4, color=".15", ax=axes[0])
-            sns.histplot(x=X, y=Y, bins=50, ax=axes[0], pthresh=.1, cmap="mako")
-            sns.kdeplot(x=X, y=Y, levels=5, ax=axes[0], color="w", linewidths=1)
-
-            # axes[0].set_axis_labels(xlabel=xlabel, ylabel=ylabel)
-
-            sns.histplot(X, stat='density', kde=True, color='firebrick', ax=axes[1], label='X')
-            sns.histplot(Y, stat='density', kde=True, color='steelblue', ax=axes[1], label='Y')
-
-            # sns.histplot(X, stat='probability', kde=True, color='firebrick', ax=axes[2])
-            # sns.histplot(Y, stat='probability', kde=True, color='steelblue', ax=axes[2])
-
-            # Can update legend afterwards using: h, _ = axes.get_legend_handles_labels() + axes.legend(h, updated_labels)
-            
-        fig.tight_layout()
-        return fig, axes
-
-
-    # Not sure about these two methods. 
-    def JointPlot(self, model, y_var_str, x_var_str, t, x_range, y_range,\
-                  interp_dims, method, y_component_indices, x_component_indices):
-        y_data_to_plot, points = \
-            self.visualizer.get_var_data(model, y_var_str, t, x_range, y_range, interp_dims, method, y_component_indices)
-        x_data_to_plot, points = \
-            self.visualizer.get_var_data(model, x_var_str, t, x_range, y_range, interp_dims, method, x_component_indices)
-        fig = plt.figure(figsize=(16,16))
-        sns.jointplot(x=x_data_to_plot.flatten(), y=y_data_to_plot.flatten(), kind="hex", color="#4CB391")
-        plt.title(y_var_str+'('+x_var_str+')')
-        fig.tight_layout()
-        plt.show()
+    # # Not sure about these two methods. 
+    # def JointPlot(self, model, y_var_str, x_var_str, t, x_range, y_range,\
+    #               interp_dims, method, y_component_indices, x_component_indices):
+    #     y_data_to_plot, points = \
+    #         self.visualizer.get_var_data(model, y_var_str, t, x_range, y_range, interp_dims, method, y_component_indices)
+    #     x_data_to_plot, points = \
+    #         self.visualizer.get_var_data(model, x_var_str, t, x_range, y_range, interp_dims, method, x_component_indices)
+    #     fig = plt.figure(figsize=(16,16))
+    #     sns.jointplot(x=x_data_to_plot.flatten(), y=y_data_to_plot.flatten(), kind="hex", color="#4CB391")
+    #     plt.title(y_var_str+'('+x_var_str+')')
+    #     fig.tight_layout()
+    #     plt.show()
         
-    def DistributionPlot(self, model, var_str, t, x_range, y_range, interp_dims, method, component_indices):
+    # def DistributionPlot(self, model, var_str, t, x_range, y_range, interp_dims, method, component_indices):
 
-        data_to_plot, points = \
-            self.visualizer.get_var_data(model, var_str, t, x_range, y_range, interp_dims, method, component_indices)
+    #     data_to_plot, points = \
+    #         self.visualizer.get_var_data(model, var_str, t, x_range, y_range, interp_dims, method, component_indices)
             
-        # print(data_to_plot)
+    #     # print(data_to_plot)
 
-        fig = plt.figure(figsize=(16,16))
-        sns.displot(data_to_plot)
-        plt.title(var_str)
-        fig.tight_layout()
-        plt.show()
-
-
-if __name__ == '__main__':
-    # pass
-    # #TESTING REGRESSION
-    # x0 = np.arange(100).reshape((10,10))
-    # x1 = np.sin(np.arange(100).reshape((10,10)))
-    # X = [x0, x1]
-    # y = 1 + 2 * x0 + 3* x1 + random.randint(20,30)
-
-    # statistical_tool = CoefficientsAnalysis()
-    # result, errors = statistical_tool.scalar_regression(y,X, add_intercept=True) 
-    # print('Coefficients: {}'.format(result))
-    # print('Errors: {}\n'.format(errors))
-
-    # #TESTING PRE-PROCESS DATA
-    # x = np.arange(1, 200)
-    # y = np.arange(29, 228)
-
-    # print('Min and max of x: {}, {}\n'.format(np.min(x), np.max(x)))
-    # print('Min and max of y: {}, {}\n'.format(np.min(y), np.max(y)))
-
-    # preprocess_data = {"value_ranges": [[None, None], [None, None]], 
-    #                 "log_abs": [1, 1]}
-
-    
-    # statistical_tool = CoefficientsAnalysis()
-    # data = [x,y]
-
-
-    # x, y = statistical_tool.preprocess_data(data, preprocess_data)
-
-    # print('Processing data....\n')
-    # print('Min and max of x: {}, {}\n'.format(np.min(x), np.max(x)))
-    # print('Min and max of y: {}, {}\n'.format(np.min(y), np.max(y)))
-    
-
-
-    # print('Extracting random vals from x...\n')
-    # print(len(x))
-    # weights = np.ones(x.shape)
-    # extracted, weights = statistical_tool.extract_randomly([x,y], 10)
-    # print(extracted)
-
-    # n = 500
-    # mean = [0, 0]
-    # cov = [(2, .4), (.4, .2)]
-    # rng = np.random.RandomState(0)
-    # x, y = rng.multivariate_normal(mean, cov, n).T
-
-    # ws = []
-    # for i in range(len(x)):
-    #     ws.append(random.uniform(0.5,1.))
-    # ws = np.array(ws)
-
-    # # print(x.shape, ws.shape)
-    # # r, _ = stats.pearsonr(x,y)
-
-    # statistical_tool = CoefficientsAnalysis()
-
-    # # wr = statistical_tool.weigthed_pearson(x,y,ws)
-    # # print(f'stats.pearsonr: {r}')
-    # # print(f'my_pearson: {wr}')
-
-    # # mu, sigma = 0, 4 # mean and standard deviation
-    # # z = np.random.normal(mu, sigma, n)
-
-    # statistical_tool = CoefficientsAnalysis()
-    # g = statistical_tool.visualize_correlation(x,y,weights=ws)
-    # legend_labels = ['pippo', 'pluto']
-    # text_for_box = r'$pippo$' + '\n' + '%.3f' %1.234454
-    # # plt.text(0.85, 0.1, text_for_box, fontsize=12, transform=plt.gcf().transFigure)
-    # bbox_args = dict(boxstyle="round", fc="0.95")
-    # plt.annotate(text=text_for_box, xy = (0.99,0.1), xycoords='figure fraction', bbox=bbox_args, ha="right", va="bottom", fontsize = 9)
-    
-
-
-    # # plt.legend(bbox_to_anchor=(1.02, 0.2), loc='upper left', borderaxespad=0)
-
-    # # labels=['x','y','z']
-    # # data=[x,y,z]
-    # # statistical_tool.visualize_many_correlations(data, labels, weights=ws)
-    # plt.show()
-
-    size = 10000
-    a = np.random.normal(loc=0.0, scale=1, size=size)
-    b = np.random.normal(loc=1, scale=1.5, size=size)
-
-    statistical_tool = CoefficientsAnalysis()
-    dist = statistical_tool.wasserstein_distance(a,b)
-    print(f'wasserstein_distance: {dist}\n')
-
-    # fig = statistical_tool.compare_distributions(a,b,'pippo', 'pluto')
-    fig, _ = statistical_tool.scatter_distrib_compare(a,b)
-
-    plt.show()
+    #     fig = plt.figure(figsize=(16,16))
+    #     sns.displot(data_to_plot)
+    #     plt.title(var_str)
+    #     fig.tight_layout()
+    #     plt.show()
 
