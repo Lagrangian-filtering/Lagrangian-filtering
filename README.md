@@ -1,6 +1,7 @@
 # LAGRANGIAN FILTERING 
 
-This is the first __fully covariant filtering scheme__ applied to relativistic hydrodynamic turbulence, as developed by Dr. Thomas Celora, Mr. Marcus J. Hatton and Dr. Ian Hawke. It is meant to be used to investigate models of relativistic turbulent flows, and calibrate sugbgrid models in a covariant fashion. In particular, the covariance of our approach means that results obtained within this framework may be lifted into an arbitrary, curved spacetime. This makes it well-suited for studies of, for example, binary neutron star mergers via numerical relativity simulations.  
+This is the first __fully covariant filtering scheme__, for applications to relativistic hydrodynamic turbulence. 
+It has been developed by Dr. Thomas Celora, Mr. Marcus J. Hatton and Dr. Ian Hawke. The codebase is meant to be used to investigate models of relativistic turbulent flows, and calibrate sugbgrid models in a fully-covariant fashion. In particular, this implies that results obtained within this framework may be lifted into an arbitrary, curved spacetime. This makes it well-suited for studies of, for example, binary neutron star mergers via numerical relativity simulations.  
 
 Related publications: 
 * [Fibration framework](https://journals.aps.org/prd/abstract/10.1103/PhysRevD.104.084090) 
