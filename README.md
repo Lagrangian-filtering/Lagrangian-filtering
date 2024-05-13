@@ -20,7 +20,7 @@ You should also have data (in HDF5 format) produced by a numerical box simulatio
 The code is developed in a pipeline-like fashion. The main classes are in the master_files folder: classes for representing simulations' and filtered data, filtering classes and classes for analyising and calibrating a closure scheme. 
 
 As an example, filter_scripts contains scripts for running simulation data through the filtering pipeline and visualizing the outcome. 
-The configuration file config_filter.txt should be modified accordingly to set the relevant parameters for the simulations. 
+The configuration file `config_filter.txt` should be modified accordingly to set the relevant parameters for the simulations. 
 The key script in here is `pickling_meso.py`, which can be used to run simulation data through the entire pipeline and store the results in compact binary representation (pickle format). The folder also contains example submit script to launch the simulation in a cluster. 
 
 The folder calibration_scripts contains scripts for calibrating and comparing subgrid models. In particular there are scripts for visualizing correlations, performing regressions and checking the performance of the a-priori tests. This folder is structured in a similar fashion as filter_scripts: it contains a single configuration file, `config_calibration.txt` and example submit scripts. 
