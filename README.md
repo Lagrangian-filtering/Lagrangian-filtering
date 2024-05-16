@@ -28,6 +28,6 @@ The folder `calibration_scripts` contains scripts for calibrating and comparing 
 Each script begins with a short description of what it is intended to do. 
 
 # AUTHORS
-* [Dr. Thomas Celora](https://www.ice.csic.es/about-us/staff)
+* [Dr. Thomas Celora](https://www.researchgate.net/profile/Thomas-Celora)
 * [Mr. Marcus Hatton](https://www.southampton.ac.uk/people/5y8l7z/mr-marcus-hatton)
 * [Dr. Ian Hawke](https://www.southampton.ac.uk/people/5x29mr/doctor-ian-hawke)
