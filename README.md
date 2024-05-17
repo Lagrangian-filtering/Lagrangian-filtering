@@ -1,6 +1,6 @@
 # LAGRANGIAN FILTERING 
 
-This is FULFILS, the implementation of the first __FUlly-covariant Lagrangian FIltering Scheme__ for applications to relativistic turbulence. 
+This is FULFILS, the implementation of the first __FUlly-covariant Lagrangian FILtering Scheme__ for applications to relativistic turbulence. 
 It has been developed by Dr. Thomas Celora, Mr. Marcus J. Hatton and Dr. Ian Hawke. The codebase is meant to be used to investigate models of relativistic turbulent flows, and calibrate sugbgrid closure models for large-eddy simulations in a fully-covariant fashion. As such, results obtained within this framework may be lifted into an arbitrary, curved spacetime. This makes it a useful tool for studying, for example, binary neutron star mergers via numerical relativity simulations.  
 
 Related publications: 
