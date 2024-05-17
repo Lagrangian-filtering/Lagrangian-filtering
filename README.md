@@ -1,12 +1,17 @@
 # LAGRANGIAN FILTERING 
 
-This is the implementation of the first __fully covariant filtering scheme__ for applications to relativistic turbulence. 
-It has been developed by Dr. Thomas Celora, Mr. Marcus J. Hatton and Dr. Ian Hawke. The codebase is meant to be used to investigate models of relativistic turbulent flows, and calibrate sugbgrid closure models in a fully-covariant fashion. As such, results obtained within this framework may be lifted into an arbitrary, curved spacetime. This makes it a useful tool for studying, for example, binary neutron star mergers via numerical relativity simulations.  
+This is FULFILS, the implementation of the first __FUlly-covariant Lagrangian FIltering Scheme__ for applications to relativistic turbulence. 
+It has been developed by Dr. Thomas Celora, Mr. Marcus J. Hatton and Dr. Ian Hawke. The codebase is meant to be used to investigate models of relativistic turbulent flows, and calibrate sugbgrid closure models for large-eddy simulations in a fully-covariant fashion. As such, results obtained within this framework may be lifted into an arbitrary, curved spacetime. This makes it a useful tool for studying, for example, binary neutron star mergers via numerical relativity simulations.  
 
 Related publications: 
 * [Fibration framework](https://journals.aps.org/prd/abstract/10.1103/PhysRevD.104.084090) 
 * [Lagrangian filtering]()
 * [A higher-level strategy]()
+
+Alternative names/acronymes:
+1. LUCRE: Lagrangian fUlly CovaRiant filteRing schEme 
+2. UTILISE: fUlly covarianT fILterIng SchemE 
+3. ASOCIAL:	lAgrangian Scheme fOr CovarIAnt fiLtering
 
 # GETTING STARTED 
 ## HOW TO INSTALL IT
