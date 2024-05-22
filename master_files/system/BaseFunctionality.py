@@ -113,6 +113,70 @@ class Base(object):
         for dim in range(len(point)):
             positions.append(Base.find_nearest(points[dim], point[dim]))
         return [np.where(points[i] == positions[i])[0][0] for i in range(len(positions))]
+
+    @staticmethod
+    def get1DFourierTrans(u, nx, ny):
+        """
+        Returns the 1D discrete fourier transform of the variable u along both 
+        the x and y directions ready for the power spectrum method.
+        Parameters
+        ----------
+        u : ndarray
+            Two dimensional array of the variable we want the power spectrum of
+        Returns
+        -------
+        uhat : array (N,)
+            Fourier transform of u
+        """
+       
+        NN = nx // 2
+        uhat_x = np.zeros((NN, ny), dtype=np.complex_)
+    
+        for k in range(NN):
+            for y in range(ny):
+                # Sum over all x adding to uhat
+                for i in range(nx):
+                    uhat_x[k, y] += u[i, y] * np.exp(-(2*np.pi*1j*k*i)/nx)
+
+        NN = ny // 2
+        uhat_y = np.zeros((NN, nx), dtype=np.complex_)
+        
+        for k in range(NN):
+            for x in range(nx):
+                # Sum over all y adding to uhat
+                for i in range(ny):
+                    uhat_y[k, x] += u[x, i] * np.exp(-(2*np.pi*1j*k*i)/ny)
+
+        return (uhat_x / nx), (uhat_y / ny) 
+    
+    @staticmethod
+    def getPowerSpectrumSq(u, nx, ny, dx, dy):
+        """
+        Returns the integrated power spectrum of the variable u, up to the Nyquist frequency = nx//2
+        Parameters
+        ----------
+        u : ndarray
+            Two dimensional array of the variable we want the power spectrum of
+        """
+        uhat_x, uhat_y = Base.get1DFourierTrans(u, nx, ny)
+
+        NN = nx // 2
+        P_x = np.zeros(NN)
+    
+        for k in range(NN):
+            for j in range(ny):
+                P_x[k] += (np.absolute(uhat_x[k, j])**2) * dy
+        P_x = P_x / np.sum(P_x)
+
+        NN = ny // 2
+        P_y = np.zeros(NN)
+
+        for k in range(NN):
+            for i in range(nx):
+                P_y[k] += (np.absolute(uhat_y[k, i])**2) * dx
+        P_y = P_y / np.sum(P_y)
+
+        return [P_x, P_y]
     
     def profile(self, fnc):
         """A decorator that uses cProfile to profile a function"""
