@@ -1,12 +1,5 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Mar 13 00:03:27 2024
-
-@author: marcu
-"""
-
-# -*- coding: utf-8 -*-
-"""
 Created on Tue Mar 12 21:38:23 2024
 
 @author: Marcus
