@@ -2,7 +2,7 @@
 """
 Created on Tue Jan 24 18:02:05 2023
 
-@author: marcu
+@authors: Marcus & Thomas
 """
 
 # USE !SCIKIT LEARN INSTEAD? IT'S THE PACKAGE FOR MACHINE LEARNING SO! 
