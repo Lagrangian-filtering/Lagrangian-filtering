@@ -2,7 +2,7 @@
 """
 Created on Fri Mar 31 10:00:00 2023
 
-@author: Thomas
+@authors: Marcus & Thomas
 """
 
 import h5py
