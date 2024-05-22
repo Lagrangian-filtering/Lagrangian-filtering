@@ -5,8 +5,6 @@ Created on Tue Jan 24 18:02:05 2023
 @authors: Marcus & Thomas
 """
 
-# USE !SCIKIT LEARN INSTEAD? IT'S THE PACKAGE FOR MACHINE LEARNING SO! 
-
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.ma as ma
