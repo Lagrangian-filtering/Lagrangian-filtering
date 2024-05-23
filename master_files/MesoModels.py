@@ -2,7 +2,7 @@
 """
 Created on Mon Mar 27 18:53:53 2023
 
-@author: Marcus
+@authors: Marcus & Thomas
 """
 
 import numpy as np
@@ -2421,5 +2421,6 @@ class resMHD2D(object):
         # g2.fig.subplots_adjust(top=0.94) 
         # print(comps)
         # plt.show()
+
 
 

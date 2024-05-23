@@ -2,7 +2,7 @@
 """
 Created on Mon Jun  5 03:14:43 2023
 
-@author: marcu
+@authors: Marcus & Thomas
 """
 
 

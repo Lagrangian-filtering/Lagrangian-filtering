@@ -2,10 +2,8 @@
 """
 Created on Tue Jan 24 18:02:05 2023
 
-@author: marcu
+@authors: Marcus & Thomas
 """
-
-# USE !SCIKIT LEARN INSTEAD? IT'S THE PACKAGE FOR MACHINE LEARNING SO! 
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -1125,3 +1123,173 @@ class CoefficientsAnalysis(object):
     #     fig.tight_layout()
     #     plt.show()
 
+class FourierAnalysis(object):
+
+    def __init__(self, visualizer):
+        """
+        Nothing as yet...
+
+        Returns
+        -------
+        Also nothing...
+
+        """
+        self.visualizer = visualizer # need to re-structure this... or do I
+
+    def GetKESF(self, vx, vy, rho):
+        """
+        Retrieves and computes the kinetic energy density for each frame in a single fluid animation.
+        Parameters
+        ----------
+        """
+        vsq = vx**2 + vy**2
+        W = 1 / np.sqrt(1 - vsq)
+        KE = W
+        #KE = rho * W * (W-1)
+        return KE
+
+    def PlotSpectrumFromPickle(self, pickle_file_name, save_fig=False, save_dir=''):
+        with open(save_dir+pickle_file_name, 'rb') as filehandle:
+            Spectra = pickle.load(filehandle)
+
+        # Setup plotting for just x OR y - single plot
+        x_or_y = 0 # 0 for x, 1 for y
+        fig = plt.figure(figsize=(4.8,3.6),dpi=1200)
+        P = Spectra[x_or_y]
+        N = len(P)
+        plt.loglog(np.arange(1, N+1), (np.arange(1, N+1)**(5/3))*np.arange(1, N+1)*P, label='Adjusted Power Spectrum')# 'k--')
+        plt.legend()
+        plt.ylabel(r"$k|P_{T}(k)|^2$", {'fontsize':'large'})
+        plt.xlabel(r'$k$')
+        fig.tight_layout()
+        if save_fig:
+            spectra_name = spectra_type+'_Energy_'
+            plt.savefig(save_dir+pickle_file_name+'.pdf', format='pdf', dpi=1200, bbox_inches='tight')
+            plt.close()
+            #plt.show()
+
+    def CompareSpectraFromPickle(self, pickle_files_names, labels=[], pickles_dir='./', save_fig=False, save_dir='', savefile_name=''):
+        # Create empty list to be populated with (x & y) spectra - hence, spectrae...
+        Spectrae = []
+        for pickle_file_name in pickle_files_names:
+            with open(pickles_dir+pickle_file_name, 'rb') as filehandle:
+                Spectrae.append(pickle.load(filehandle))
+
+        # Setup plotting for just x OR y - single plot
+        x_or_y = 0 # 0 for x, 1 for y
+        fig = plt.figure(figsize=(4.8,3.6),dpi=1200)
+        for Spectra, label in zip(Spectrae, labels):
+            P = Spectra[x_or_y]
+            N = len(P)
+            plt.loglog(np.arange(1, N+1), (np.arange(1, N+1)**(5/3))*np.arange(1, N+1)*P, label=label)
+        plt.legend()
+        plt.ylabel(r"$k|P_{T}(k)|^2$", {'fontsize':'large'})
+        plt.xlabel(r'$k$')
+        fig.tight_layout()
+        if save_fig:
+            plt.savefig(save_dir+savefile_name+'.pdf', format='pdf', dpi=1200, bbox_inches='tight')
+            plt.close()
+            #plt.show()
+
+    def PerformAnalysis(self, model, energy_var_str, Lorentz_var_str, t, x_range, y_range,
+                        component_indices=(), save_fig=False, dump_spectra=False, save_dir='', spectra_type='Kinetic', load_file_name=None, magnetic_var_str=None):
+
+        if spectra_type == 'Kinetic':
+
+            # Gather relevant data for KE power spectrum
+            W, points = self.visualizer.get_var_data(model, Lorentz_var_str, t=t, x_range=x_range, y_range=y_range, component_indices=component_indices)
+            #vx, points = self.visualizer.get_var_data(model,'v1', t=t, x_range=x_range, y_range=y_range, component_indices=component_indices)
+            #vy, points = self.visualizer.get_var_data(model, 'v2', t=t, x_range=x_range, y_range=y_range, component_indices=component_indices)
+            # U0, points = self.visualizer.get_var_data(model, 'U', t, x_range, y_range, component_indices=(0,))
+            rho, points = self.visualizer.get_var_data(model, energy_var_str, t=t, x_range=x_range, y_range=y_range)
+            
+            nx = len(points[1])
+            ny = len(points[2])
+            dx = points[1][1] - points[1][0]
+            dy = points[2][1] - points[2][0]
+            dXs = [dx, dy]
+            ns = [nx, ny]
+
+            # Calculate the KE
+            #KE = rho * W * (W-1)
+            KE = W
+            #KE = self.GetKESF(vx, vy, rho)
+            # Get its 1D, FT'd power spectra in the x and y directions
+            Spectra = Base.getPowerSpectrumSq(KE, nx, ny, dx, dy)
+            if dump_spectra == True:
+                with open(save_dir+'KESpectra_'+model.get_model_name()+'.pickle', 'wb') as filehandle:
+                    pickle.dump(Spectra, filehandle)
+
+        elif spectra_type == 'Magnetic':
+            B, points = self.visualizer.get_var_data(model, magnetic_var_str, t=t, x_range=x_range, y_range=y_range, component_indices=component_indices)
+
+            # Get the required domain info.
+            nx = len(points[1])
+            ny = len(points[2])
+            dx = points[1][1] - points[1][0]
+            dy = points[2][1] - points[2][0]
+            dXs = [dx, dy]
+            ns = [nx, ny]
+
+            # Calculate the magnetic energy
+            ME = B**2
+            # Get its 1D, FT'd power spectra in the x and y directions
+            Spectra = Base.getPowerSpectrumSq(ME, nx, ny, dx, dy)
+            if dump_spectra == True:
+                with open(save_dir+'MESpectra_'+model.get_model_name()+'.pickle', 'wb') as filehandle:
+                    pickle.dump(Spectra, filehandle)
+
+        elif spectra_type == 'Preload':
+            with open(save_dir+load_file_name, 'rb') as filehandle:
+                Spectra = pickle.load(filehandle)
+
+        else:
+            printf('spectra_type must be either Kinetic or Magnetic or Preload', flush=True)
+
+        # Setup plotting for just x OR y - single plot
+        x_or_y = 0 # 0 for x, 1 for y
+        fig = plt.figure(figsize=(4.8,3.6),dpi=1200)
+        P = Spectra[x_or_y]
+        N = len(P)
+        plt.loglog(np.arange(1, N+1), (np.arange(1, N+1)**(5/3))*np.arange(1, N+1)*P, label='Adjusted Power Spectrum')# 'k--')
+        plt.legend()
+        plt.ylabel(r"$k|P_{T}(k)|^2$", {'fontsize':'large'})
+        plt.xlabel(r'$k$')
+
+        """
+        # Setup plotting for x AND y plotted - subplots
+        fig, axs = plt.subplots(1, 2, sharey=True, dpi=1200)
+        fig.set_size_inches(8,4)
+
+        for ax, P, n, dX in zip(axs, Spectra, ns, dXs):
+            N = n//2
+            #ax.loglog(np.arange(1, N+1), np.arange(1, N+1)*P, label=r'$Single \ Fluid \ Ideal$')
+            ax.set_xlabel(r'$k$')
+
+            if spectra_type == 'Kinetic' or spectra_type == 'Preload':
+                axs[0].set_ylabel(r"$k|P_{T}(k)|^2$", {'fontsize':'large'})
+            
+                # Kolmogorov Scaling
+                ax.loglog(dX*np.arange(1, N+1), (np.arange(1, N+1)**(5/3))*dX*np.arange(1, N+1)*P, label='Adjusted Power Spectrum')# 'k--')
+                # ax.loglog([k[0], k[-1]], [P[0], P[0]*(k[-1]/k[0])**(-5/3)], 'k--')
+                #ax.loglog([1, N], [P[0], P[0]*(N**(-5/3))], 'k--')
+                #ax.loglog(np.arange(1, N+1), (np.arange(1, N+1)**(5/3))*P, 'k--')
+                #ax.annotate(r'$k^{-5/3}$', xy=(40, 0.01), fontsize=15)
+            
+            if spectra_type == 'Magnetic':
+                # Kaznetsev scaling
+                ax.loglog(np.arange(1, N+1), (np.arange(1, N+1)**(3/2))*np.arange(1, N+1)*P, 'k--')
+                # ax.loglog([k[0], k[-1]], [P[0], P[0]*(k[-1]/k[0])**(3/2)], 'k--')
+                ax.annotate(r'$k^{3/2}$', xy=(40, 0.01), fontsize=15)
+
+            ax.legend(loc='lower left')
+            axs[1].set_yticks([])
+
+        """
+        
+        fig.tight_layout()
+        if save_fig:
+            spectra_name = spectra_type+'_Energy_'
+            plt.savefig(save_dir+spectra_name+model.get_model_name()+'.pdf', format='pdf', dpi=1200, bbox_inches='tight')
+            plt.close()
+            #plt.show()
