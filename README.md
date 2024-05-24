@@ -5,7 +5,7 @@ It has been developed by Dr. Thomas Celora, Mr. Marcus J. Hatton and Dr. Ian Haw
 
 Related publications: 
 * [Fibration framework](https://journals.aps.org/prd/abstract/10.1103/PhysRevD.104.084090) 
-* [Lagrangian filtering]()
+* [Lagrangian filtering](https://arxiv.org/abs/2405.13593)
 * [A higher-level strategy]()
 
 
@@ -16,7 +16,7 @@ To begin using the code, first clone this repository
 git clone https://github.com/Lagrangian-filtering/Lagrangian-filtering
 ```
 The code is entirely developed in the Python language, so a normal Python interpreter plus some additional libraries will suffice. 
-You should also have data (in HDF5 format) produced by a numerical box simulation of hydrodynamics turbulence. For example, you may get this by running one of the examples of the [METHOD](https://github.com/AlexJamesWright/METHOD/tree/master) codebase. More information on how such data should be stored for running it through the pipeline can be found in [Lagrangian filtering]().
+You should also have data (in HDF5 format) produced by a numerical box simulation of hydrodynamics turbulence. For example, you may get this by running one of the examples of the [METHOD](https://github.com/AlexJamesWright/METHOD/tree/master) codebase. More information on how such data should be stored for running it through the pipeline can be found in [Lagrangian filtering](https://arxiv.org/abs/2405.13593).
 
 ## HOW TO USE IT
 The code is developed in a pipeline-like fashion. The main classes are in the `master_files` folder: classes for representing simulations' and filtered data, filtering classes and classes for analyising and calibrating a closure scheme. 
