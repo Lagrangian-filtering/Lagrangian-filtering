@@ -211,7 +211,7 @@ class Plotter_2D(object):
         if cmaps == None:
             cmaps = [None for _ in range(len(var_strs))]
         elif len(var_strs)!= len(cmaps):
-            print('The norms provided are not the same number as the variables: setting these to auto')
+            print('The colormaps provided are not the same number as the variables: setting these to auto')
             cmaps = [None for _ in range(len(var_strs))]
 
         n_rows, n_cols = self.plot_vars_subplots_dims[n_plots]
@@ -512,3 +512,328 @@ class Plotter_2D(object):
         fig.tight_layout()
         # plt.subplot_tool()
         return fig
+
+
+class Plotter_2Dslices(object):
+    """
+    Class for plotting 2D slices of 3+1 dimensional models.
+    """
+    def __init__(self, screen_size = [11.97, 8.36]):
+        """
+        Parameters: 
+        -----------
+        screen_size = list of 2 floats 
+            width and height of the screen: used to rescale plots' size.
+        """
+        self.plot_vars_subplots_dims = {
+                        1 : (1,1),
+                        2 : (1,2),
+                        3 : (1,3),
+                        4 : (2,2),
+                        5 : (2,3),
+                        6 : (2,3)}
+                         
+                        
+        self.screen_size = np.array(screen_size)
+
+        # Change to latex font
+        plt.rc("font",family="serif")
+        plt.rc("mathtext",fontset="cm")
+    
+    def get_var_data(self, model, var_str, t, slicing_axis, slicing_const, range_1, range_2, 
+                     component_indices=(), method= 'raw_data', interp_dims=None):
+        """
+        Retrieves the required data from model to plot a variable defined by
+        var_str over coordinates t, x_range, y_range, either from the model's
+        raw data or by interpolating between the model's raw data over the coords.
+
+        Parameters
+        ----------
+        model : Micro or Meso Model
+        var_str : str
+            Must match a variable of the model.
+        t : float
+            time coordinate of the time slice.
+        slicing_axis: integer
+            1 if plotting x=const, 2 if plotting y=const, 3 if plotting z=const
+        slicing_const: float
+            const coordinate of the slicing axis 
+        range_1 : list of 2 floats: start and end
+            defines range of coordinates within foliation 
+        range_2 : list of 2 floats: start and end
+            defines range of coordinates within foliation.
+        component_indices : tuple
+            the indices of the component to pick out if the variable is a vector/tensor.
+        method : str
+            currently either raw_data or interpolate.
+        interp_dims : tuple of integers
+            defines the number of points to interpolate at in the two directions.
+        
+        Returns
+        -------
+        data_to_plot : numpy array of floats
+            the 2D data to be plotted by plt.imshow()
+        extent: list of floats 
+
+            
+
+        Notes:
+        ------
+        Spatial directions: selected automatically (in the order x-y-z) and removing the one 
+        corresponding to the direction provided via slicing_axis
+
+        Logic: if method is raw_data, then no interp_dims are needed. 
+        Better to have 'raw_data' and interp_dims = None as default 
+
+        data_to_plot is transposed and extent is built to be used with: 
+        origin=lower, extent=L,R,B,T by imshow
+
+        """
+        if var_str in model.get_all_var_strs():
+
+            # Block to check component_indices passed are compatible with shape of var to be plotted. 
+            st1 = len(component_indices)
+            st2 = len(model.get_var_gridpoint(var_str, 0, 0, 0, 0).shape)
+            compatible = st1==st2 
+            if not compatible: 
+                if st2 == 0 : 
+                    print('WARNING: {} is a scalar but you passed some indices, ignoring this and moving on.'.format(var_str))
+                    component_indices = ()
+                elif st2 != 0: 
+                    print('WARNING: {} is a tensor but you passed more/fewer indices than required. Retrieving the "first component"!'.format(var_str))
+                    component_indices = tuple([0 for _ in range(st2)])  
+            
+            if method == 'interpolate':
+                compatible = interp_dims != None and len(interp_dims) ==2
+                if not compatible: 
+                    print('Error: when using (linearly spaced) interpolated data, you must' +\
+                          'specify # points in each spatial direction! Exiting.')
+                    return None
+                
+                nx, ny = interp_dims[:]
+                xs, ys = np.linspace(range_1[0], range_1[1], nx), np.linspace(range_2[0], range_2[1], ny)
+                data_to_plot = np.zeros((nx, ny))
+                
+                extent = [xs[0],xs[-1],ys[0],ys[-1]]
+
+                for i in range(nx):
+                    for j in range(ny):
+                        if slicing_axis==1: 
+                            point = [t, slicing_const, xs[i], ys[j]]
+                        elif slicing_axis==2: 
+                            point = [t, xs[i], slicing_const, ys[j]]
+                        elif slicing_axis==3:
+                            point = [t, xs[i], ys[j], slicing_const]
+
+                        data_to_plot[i, j] = model.get_interpol_var(var_str, point)[component_indices]
+                           
+            elif method == 'raw_data':
+
+                gridpoints = model.get_gridpoints()
+                
+                if slicing_axis==1: 
+                    start_indices = Base.find_nearest_cell([t, slicing_const, range_1[0], range_2[0]], model.get_gridpoints())
+                    end_indices = Base.find_nearest_cell([t, slicing_const, range_1[1], range_2[1]], model.get_gridpoints()) 
+
+                    h = start_indices[0]
+                    k = start_indices[1]
+                    i_s, i_f = start_indices[2], end_indices[2]
+                    j_s, j_f = start_indices[3], end_indices[3]    
+
+                    extent = [ gridpoints[2][0] , gridpoints[2][-1], gridpoints[3][0], gridpoints[3][-1] ]
+
+                    data_shape = (i_f - i_s + 1, j_f - j_s + 1) 
+                    data_to_plot = np.zeros(data_shape)
+
+                    for i in range(i_f - i_s + 1): 
+                        for j in range(j_f - j_s + 1): 
+                            data_to_plot[i,j] = model.get_var_gridpoint(var_str, h, k, i + i_s, j + j_s)[component_indices]
+
+                if slicing_axis==2: 
+                    start_indices = Base.find_nearest_cell([t, range_1[0], slicing_const, range_2[0]], model.get_gridpoints())
+                    end_indices = Base.find_nearest_cell([t, range_1[1], slicing_const, range_2[1]], model.get_gridpoints())    
+
+                    h = start_indices[0]
+                    i_s, i_f = start_indices[1], end_indices[1]
+                    k = start_indices[2]
+                    j_s, j_f = start_indices[3], end_indices[3]  
+
+                    extent = [ gridpoints[1][0] , gridpoints[1][-1], gridpoints[3][0], gridpoints[3][-1] ]
+
+                    data_shape = (i_f - i_s + 1, j_f - j_s + 1) 
+                    data_to_plot = np.zeros(data_shape)
+
+                    for i in range(i_f - i_s + 1): 
+                        for j in range(j_f - j_s + 1): 
+                            data_to_plot[i,j] = model.get_var_gridpoint(var_str, h, i + i_s, k, j + j_s)[component_indices]
+
+                if slicing_axis==3: 
+                    start_indices = Base.find_nearest_cell([t, range_1[0], range_2[0], slicing_const], model.get_gridpoints())
+                    end_indices = Base.find_nearest_cell([t, range_1[1], range_2[1], slicing_const], model.get_gridpoints())   
+
+                    h = start_indices[0]
+                    i_s, i_f = start_indices[1], end_indices[1]
+                    j_s, j_f = start_indices[2], end_indices[2]
+                    k = start_indices[3]                   
+
+                    extent = [ gridpoints[1][0] , gridpoints[1][-1], gridpoints[2][0], gridpoints[2][-1] ]
+
+                    data_shape = (i_f - i_s + 1, j_f - j_s + 1) 
+                    data_to_plot = np.zeros(data_shape)
+
+                    for i in range(i_f - i_s + 1): 
+                        for j in range(j_f - j_s + 1): 
+                            data_to_plot[i,j] = model.get_var_gridpoint(var_str, h, i + i_s, j + j_s, k)[component_indices]
+
+            else:
+                print('Data method is not a valid choice! Must be interpolate or raw_data.')
+                return None
+            
+            data_to_plot = np.transpose(data_to_plot)
+            return data_to_plot, extent
+        
+        else:
+             print(f'{var_str} is not a plottable variable of the model!') 
+             return None
+
+    def plot_vars(self, model, var_strs, t, slicing_axis, slicing_const, range_1, range_2,
+                components_indices=None, method='raw_data', interp_dims=None, norms=None, cmaps=None):
+        """
+        Plot variable(s) from model, defined by var_strs, over coordinates 
+        t, x_range, y_range. Either from the model's raw data or by interpolating 
+        between the model's raw data over the coords.
+
+        Parameters
+        ----------
+        model : Micro or Meso Model
+        var_strs : list of str
+            Must match entries in the models' 'vars' dictionary.
+        t : float
+            time coordinate (defines the foliation).
+        slicing_axis: integer
+            1 if plotting x=const, 2 if plotting y=const, 3 if plotting z=const
+        slicing_const: float
+            const coordinate of the slicing axis 
+        range_1 : list of 2 floats: start and end
+            defines range of coordinates within foliation 
+        range_2 : list of 2 floats: start and end
+            defines range of coordinates within foliation.
+        components_indices : list of tuple(s)
+            the indices of the components to pick out if the variables are vectors/tensors.
+            Can be omitted if all variables are scalars, otherwise must be a list
+            of tuples matching the length of var_strs that corresponds with each
+            variable in the list.
+        method : str
+            currently either 'raw_data' or 'interpolate'
+        interp_dims : tuple of integers
+            defines the number of points to interpolate at in x and y directions.
+        norms = list of strs
+            each entry of the list is passed as option to imshow as norm=str
+            when plotting the corresponding var
+            
+            valid choices include all the standard norms like log or symlog, 
+            and 'mysymlog' which is implemented in BaseFunctionality
+
+        cmaps = list of strs
+            each entry of the list is passed to imshow as cmap=cmaps[i]
+            when plotting the corresponding var
+
+            valid choices are all the std ones
+        
+        Returns:
+        --------
+        Plots the (2D) data using imshow. Note that the plotting data's coordinates
+        may not perfectly match the input coordinates if method=raw_data as
+        nearest-cell data is used where the input coordinates do not coincide
+        with the model's raw data coordinates.
+
+        Notes:
+        ------
+        Spatial directions: selected automatically as in get_var_data
+
+        """
+        n_plots = len(var_strs)
+
+        if norms == None:
+            norms = [None for _ in range(len(var_strs))]
+        elif len(var_strs)!= len(norms):
+            print('The norms provided are not the same number as the variables: setting these to auto')
+            norms = [None for _ in range(len(var_strs))]
+
+        if cmaps == None:
+            cmaps = [None for _ in range(len(var_strs))]
+        elif len(var_strs)!= len(cmaps):
+            print('The colormaps provided are not the same number as the variables: setting these to auto')
+            cmaps = [None for _ in range(len(var_strs))]
+
+        n_rows, n_cols = self.plot_vars_subplots_dims[n_plots]
+
+        # Block to determine adaptively the figsize. 
+        figsizes = {1 : (1/3.,1/3.),
+                2 : (2/3.,1/3.),
+                3 : (1,1/3.),
+                4 : (2/3.,2/3.),
+                5 : (1,2/3.),
+                6 : (1,2/3.)}
+        for item in figsizes: 
+            figsizes[item] = tuple(figsizes[item] * self.screen_size)
+        figsize = figsizes[n_plots]
+        
+        
+        fig, axes = plt.subplots(n_rows,n_cols, figsize=figsize) 
+        if n_plots == 1:
+            axes = [axes]
+        else:
+            axes = axes.flatten()
+
+        if not components_indices: 
+            print('No list of components indices passed: setting this to an empty list.')
+            components_indices = [ () for _ in range(len(var_strs))]
+        
+
+        axes_names = {1:[r'$y$',r'$z$'], 2:[r'$x$',r'$z$'], 3:[r'$x$',r'$y$']}
+
+        for i, (var_str, component_indices, ax) in enumerate(zip(var_strs, components_indices, axes)):  
+
+            data_to_plot, extent = self.get_var_data(model, var_str, t, slicing_axis, slicing_const, range_1, range_2, component_indices, method, interp_dims)
+
+            if norms[i] == 'mysymlog': 
+                ticks, labels, nodes = MySymLogPlotting.get_mysymlog_var_ticks(data_to_plot)
+                data_to_plot = MySymLogPlotting.symlog_var(data_to_plot)
+                mynorm = MyThreeNodesNorm(nodes)
+                im = ax.imshow(data_to_plot, extent=extent, origin='lower', norm=mynorm, cmap=cmaps[i])
+                divider = make_axes_locatable(ax)
+                cax = divider.append_axes('right', size='5%', pad=0.05)
+                cbar = fig.colorbar(im, cax=cax, orientation='vertical')
+                cbar.set_ticks(ticks)
+                cbar.ax.set_yticklabels(labels)
+
+            elif norms[i] != 'mysymlog':
+                im = ax.imshow(data_to_plot, extent=extent, origin='lower', norm=norms[i], cmap=cmaps[i])
+                divider = make_axes_locatable(ax)
+                cax = divider.append_axes('right', size='5%', pad=0.05)
+                fig.colorbar(im, cax=cax, orientation='vertical')
+            
+            title = var_str
+            if hasattr(model, 'labels_var_dict'):
+                if title in model.labels_var_dict.keys():
+                    title = model.labels_var_dict[title]
+            if component_indices != ():
+                title = title + ", {}-component".format(component_indices)
+            ax.set_title(title)
+            ax.set_xlabel(axes_names[slicing_axis][0]) 
+            ax.set_ylabel(axes_names[slicing_axis][1])
+
+        
+
+        axes_dict = {1: "x=", 2:"y=", 3:"z=" }
+        axes_const = '%.1f' %slicing_const
+
+        time_for_filename = str(round(t,2))
+        title_str = '{}, t={}, '.format(model.get_model_name(), time_for_filename) + axes_dict[slicing_axis]+ axes_const
+        fig.suptitle(title_str, fontsize = 12)
+        fig.tight_layout()
+        # plt.show()
+        return fig
+        
+    

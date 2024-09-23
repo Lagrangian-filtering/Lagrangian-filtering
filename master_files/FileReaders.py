@@ -230,3 +230,101 @@ class METHOD_HDF5(object):
         micro_model.domain_vars['points'] = [micro_model.domain_vars['t'], micro_model.domain_vars['x'], \
                                              micro_model.domain_vars['y']]
 
+    def read_in_data3D(self, micro_model):   
+        """
+        Store 3+1 dimensional data from files into micro_model
+
+        Parameters
+        ----------
+        micro_model: instance of a MicroModel 
+            strs in micromodel have to be the same as hdf5 files output from METHOD.
+
+        Notes 
+        -----
+            use and adapt translating dictionary if you want to store data in micromodel 
+            using different keys than those from METHOD.
+
+        """ 
+
+        self.translating_prims = dict.fromkeys(micro_model.get_prim_strs())
+        for prim_str in micro_model.get_prim_strs():
+            if prim_str == "n":
+                self.translating_prims[prim_str] = "rho"
+            else: 
+                self.translating_prims[prim_str] = prim_str 
+
+        for prim_var_str in  micro_model.prim_vars:
+            try: 
+                method_str = self.translating_prims[prim_var_str]
+                for counter in range(self.num_files):
+                    micro_model.prim_vars[prim_var_str].append( self.hdf5_files[counter]["Primitive/"+method_str][:] )
+
+                micro_model.prim_vars[prim_var_str]  = np.array(micro_model.prim_vars[prim_var_str])
+            except KeyError:
+                print(f'{method_str} is not in the hdf5 dataset: check Primitive/')
+        
+
+        self.translating_aux = dict.fromkeys(micro_model.get_aux_strs())
+        for aux_str in micro_model.get_aux_strs():
+            self.translating_aux[aux_str] = aux_str
+
+        for aux_var_str in  micro_model.aux_vars:
+            try: 
+                method_str = self.translating_aux[aux_var_str]
+                for counter in range(self.num_files):
+                    micro_model.aux_vars[aux_var_str].append( self.hdf5_files[counter]["Auxiliary/"+method_str][:] )
+                micro_model.aux_vars[aux_var_str] = np.array(micro_model.aux_vars[aux_var_str])
+            except KeyError:
+                print(f'{method_str} is not in the hdf5 dataset: check Auxiliary/')
+ 
+        # As METHOD saves endTime, the time variables (and points) need to be dealt with separately
+        for dom_var_str in micro_model.domain_int_strs: 
+            try: 
+                if dom_var_str == 'nt': 
+                    pass
+                else: 
+                    micro_model.domain_vars[dom_var_str] = int( self.hdf5_files[0]['Domain/' + dom_var_str][:])
+            except KeyError: 
+                print(f'{dom_var_str} is not in the hdf5 dataset: check Domain/')
+
+        for dom_var_str in micro_model.domain_float_strs: 
+            try: 
+                if dom_var_str in ['tmin', 'tmax']: 
+                    pass
+                else: 
+                    micro_model.domain_vars[dom_var_str] = float( self.hdf5_files[0]['Domain/' + dom_var_str][:])
+            except KeyError: 
+                print(f'{dom_var_str} is not in the hdf5 dataset: check Domain/')
+
+        for dom_var_str in micro_model.domain_array_strs: 
+            try: 
+                if dom_var_str in ['t','points', 'x', 'y', 'z']: 
+                    pass
+                else: 
+                    micro_model.domain_vars[dom_var_str] = self.hdf5_files[0]['Domain/' + dom_var_str][:]
+            except KeyError: 
+                print(f'{dom_var_str} is not in the hdf5 dataset: check Domain/')
+
+
+        micro_model.domain_vars['nt'] = self.num_files
+        for counter in range(self.num_files):
+            micro_model.domain_vars['t'].append( float(self.hdf5_files[counter]['Domain/endTime'][:]))
+
+        micro_model.domain_vars['x'] = np.zeros(micro_model.domain_vars['nx'])
+        for i in range(len(micro_model.domain_vars['x'])):
+            micro_model.domain_vars['x'][i] = micro_model.domain_vars['xmin'] + i * micro_model.domain_vars['dx']
+
+        micro_model.domain_vars['y'] = np.zeros(micro_model.domain_vars['ny'])
+        for i in range(len(micro_model.domain_vars['y'])):
+            micro_model.domain_vars['y'][i] = micro_model.domain_vars['ymin'] + i * micro_model.domain_vars['dy']
+
+        micro_model.domain_vars['z'] = np.zeros(micro_model.domain_vars['nz'])
+        for i in range(len(micro_model.domain_vars['z'])):
+            micro_model.domain_vars['z'][i] = micro_model.domain_vars['zmin'] + i * micro_model.domain_vars['dz']
+
+            
+        micro_model.domain_vars['t'] = np.array(micro_model.domain_vars['t'])
+        micro_model.domain_vars['tmin'] = np.amin(micro_model.domain_vars['t'])
+        micro_model.domain_vars['tmax'] = np.amax(micro_model.domain_vars['t'])
+        micro_model.domain_vars['points'] = [micro_model.domain_vars['t'], micro_model.domain_vars['x'], \
+                                             micro_model.domain_vars['y'], micro_model.domain_vars['z']]
