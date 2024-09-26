@@ -27,7 +27,7 @@ class FindObs_flux_min(object):
     """
     def __init__(self, micro_model, box_len):
         """
-        Parameters: 
+        Parameters
         -----------
         micro_model: instance of class containing the microdata
 
@@ -50,11 +50,11 @@ class FindObs_flux_min(object):
         """
         Build tetrad orthogonal to normalized velocity U.
 
-        Parameters:
+        Parameters
         -----------
         U: list of d+1 floats, with d the number of spatial dimensions 
 
-        Return:
+        Return
         -------
         list of arrays: U + d unit vectors that complete it to a orthonormal basis
         """
@@ -82,11 +82,11 @@ class FindObs_flux_min(object):
         Build normalized four-velocity from spatial components, then pass this and
         return the result of get_tetrad_from_U()
 
-        Parameters:
+        Parameters
         -----------
         spatial_vels: list of d floats, with d the number of spatial dimensions 
 
-        Return:
+        Return
         -------
         list of arrays: U + d unit vectors that complete it to a orthonormal basis
         """
@@ -105,7 +105,7 @@ class FindObs_flux_min(object):
         for points to sample the flux through each face.
         Next, approximate the flux integral as a sum
 
-        Parameters:
+        Parameters
         -----------
         spatial_vels: list of d (spatial dimension) floats, spatial coord of vel
         
@@ -114,11 +114,11 @@ class FindObs_flux_min(object):
         lin_spacing: integer, lin_spacing**spatial_dim is the # of points used to 
             sample the flux through each face. 
 
-        Returns:
+        Returns
         --------
         float: absolute flux 
 
-        Notes:
+        Notes
         ------
         Much faster than method based on inbuilt dblquad.
         """
@@ -155,7 +155,7 @@ class FindObs_flux_min(object):
         Alternative for computing manually the flux residual, using the Gauss
         Legendre method. 
 
-        Parameters:
+        Parameters
         -----------
         spatial_vels: list of d (spatial dimension) floats, spatial coord of vel
         
@@ -163,11 +163,11 @@ class FindObs_flux_min(object):
 
         order: integer, order of the Gauss-Legendre sampling method. 
 
-        Returns:
+        Returns
         --------
         float: absolute flux 
 
-        Notes:
+        Notes
         ------
         Much faster than method based on inbuilt dblquad. Should be more accurate 
         than the one based on linearly spaced points. 
@@ -240,17 +240,17 @@ class FindObs_flux_min(object):
         Compute the flux residual using inbuilt method dblquad or tplquad
         Based on function point_flux (nested definition)
 
-        Parameters:
+        Parameters
         -----------
         Vs: list of d floats, spatial components of the velocity vec
 
         point: float, center of the box
 
-        Returns:
+        Returns
         --------
         tuple: absolute flux and error estimate
 
-        Notes:
+        Notes
         ------
         Vastly slower than method above. 
         As this is based on dblquad, this method works fine only if it's 2+1 dim
@@ -304,7 +304,7 @@ class FindObs_flux_min(object):
         """
         Key function: minimize the flux residual and find the observer at point. 
         
-        Parameters: 
+        Parameters
         -----------
         point: list of spatial_dims+1 floats (t,x,y)
 
@@ -317,12 +317,12 @@ class FindObs_flux_min(object):
             if the number of spatial vels passed does not match the micro_model dimensionality, the 
             pointwise velocity is used instead. 
 
-        Returns:
+        Returns
         --------
         Successful minimization: Boolean True, observer, error
         Failed minimization: Boolean False, coordinates
 
-        Notes:
+        Notes
         ------
         To change the number of points to be used with linear or Gauss-Legendre methods, 
         or the absolute relative of the inbuilt method, change the default values of 
@@ -446,7 +446,7 @@ class FindObs_drift_root(object):
     """
     def __init__(self, micro_model, box_len):
         """
-        Parameters:
+        Parameters
         -----------
         micro_model: instance of micro_model, the micro data to be filtered
         
@@ -470,11 +470,11 @@ class FindObs_drift_root(object):
         First construct unit four-velocity from spatial velocities. 
         Then build tetrad orthogonal to unit four-velocity.
 
-        Parameters:
+        Parameters
         -----------
         spatial_vels: list of d floats, with d the number of spatial dimensions 
 
-        Return:
+        Return
         -------
         list of arrays: U + d unit vectors that complete it to a orthonormal basis
         """
@@ -503,7 +503,7 @@ class FindObs_drift_root(object):
         Then compute the drift with respect to each element in the triad completing U (built from 
         spatial vels) to a tetrad. 
 
-        Parameters:
+        Parameters
         -----------
         spatial_vels: list of d floats, the spatial vels of the observer
         
@@ -511,7 +511,7 @@ class FindObs_drift_root(object):
 
         lin_spacing: integer, number of points (in each direction) used for sampling the box 
 
-        Returns:
+        Returns
         --------
         list of d floats, the drifts in each direction of the triad. 
         """
@@ -546,7 +546,7 @@ class FindObs_drift_root(object):
         """
         Method to compute net drift residual through the box, using Gauss-Legendre method
 
-        Parameters:
+        Parameters
         -----------
         spatial_vels: list of d floats, the spatial velocities of the observer
 
@@ -554,7 +554,7 @@ class FindObs_drift_root(object):
 
         order: integer, the order of the Gauss-Legendre approximation (up to 5)
 
-        Returns:
+        Returns
         --------
         list of d floats, the average drift in each direction of the triad.
 
@@ -622,7 +622,7 @@ class FindObs_drift_root(object):
         """
         Method to compute net drift residual through the box, using Gauss-Legendre method
 
-        Parameters:
+        Parameters
         -----------
         spatial_vels: list of d floats, the spatial velocities of the observer
 
@@ -630,7 +630,7 @@ class FindObs_drift_root(object):
 
         abserr = optional float, absolute error to be passed to tplquad
 
-        Returns:
+        Returns
         --------
         list of d floats, the average drift in each direction of the triad.
         """
@@ -661,7 +661,7 @@ class FindObs_drift_root(object):
         """
         Key method: use optimize.root to find the roots of the drift function. 
 
-        Parameters: 
+        Parameters
         -----------
         point: list of d+1 floats, ordered (t,x,y,...), the coordinates of the box centre
 
@@ -672,12 +672,12 @@ class FindObs_drift_root(object):
             if the number of spatial vels passed does not match the micro_model dimensionality, the 
             pointwise velocity is used instead. 
 
-        Returns:
+        Returns
         --------
         Successful root-finding: Boolean True, observer, avg error
         Failed minimization: Boolean False, coordinates 
 
-        Notes:
+        Notes
         ------
         Change the optional values of the corresponding drift methods to change 
         the number of points used to sample the d+1 box.
@@ -712,7 +712,7 @@ class FindObs_drift_root(object):
         """
         Key method: use optimize.root to find the roots of the drift function.
 
-        Parameters:
+        Parameters
         -----------
         points: list of spatial_dims+1 floats, ordered as (t,x,y) 
  
@@ -720,7 +720,7 @@ class FindObs_drift_root(object):
             string for the method used to compute the drifts, must be chosen within
             ['gauss', 'linear', 'inbuilt']
 
-        Returns:
+        Returns
         --------
         list of:
             1) coordinates at which root finding is successful 
@@ -729,7 +729,7 @@ class FindObs_drift_root(object):
 
         list of coordinates at which root finding failed 
 
-        Notes:
+        Notes
         ------
         Change the optional values of the corresponding drift methods to change 
         the number of points used to sample the d+1 box. 
@@ -756,7 +756,7 @@ class FindObs_drift_root(object):
         Key function: minimize the flux_residual and find the observers for points
         in the ranges. drift_str determines the method to compute the flux residual. 
 
-        Parameters:
+        Parameters
         -----------
         num_points: list of integers 
             number of points to find observers at in each direction
@@ -768,7 +768,7 @@ class FindObs_drift_root(object):
             string for the method used to compute the flux, must be chosen within
             ['gauss', 'linear', 'inbuilt']
 
-        Returns:
+        Returns
         --------
         list of:
             1) coordinates at which root finding is successful 
@@ -777,7 +777,7 @@ class FindObs_drift_root(object):
 
         list of coordinates at which the root finding failed 
 
-        Notes:
+        Notes
         ------
         Change the optional values of the corresponding drift methods to change 
         the number of points used to sample the d+1 box.
@@ -831,11 +831,11 @@ class FindObs_root_parallel(object):
         First build unit four-velocity from spatial vels. 
         Then build tetrad orthogonal to unit velocity.
 
-        Parameters:
+        Parameters
         -----------
         spatial_vels: list of d floats 
 
-        Return:
+        Return
         -------
         list of arrays: U + d unit vectors that complete it to a orthonormal basis
         """
@@ -862,12 +862,18 @@ class FindObs_root_parallel(object):
         Build the adapted coordinates and weights: this is independent of specific point
         so can be done once for all workers within a process managed by pool.
 
-        Parameters:
+        Parameters
         -----------
-        spatial dimensions: int 
         L: float
+            the side-length of the space-time box for finding observer
+        
+        grid: list of lists of floats 
+            the micro-grid, passed once and for all processes
 
-        Notes:
+        BC: np.array()
+            the micro_model baryon current, passed once and for all processes
+
+        Notes
         ------
         As this is built as static method, spatial_dims and L cannot be read 
         from the specific instance of class
@@ -911,21 +917,22 @@ class FindObs_root_parallel(object):
         The task is a combination of what has been split into multiple methods 
         in the serial version of this class. 
 
-        Parameters:
+        Parameters
         -----------
-        point_pos: list
-            point_pos[0] contains the coordinates of point where to find observer
+        point: list of floats /  np.array()
+            the coordinates of point where to find observer
 
-            point_pos[1] contains the position in a larger list passed to pool.map()
+        pos_in_list_points
+            the position in the list of points passed to pool.starmap()
 
-        Returns:
+        Returns
         --------
         Successful root-finding: Boolean True, position of point in list passed to pool.map(),
                                 observer, avg error
 
         Failed minimization: Boolean False, position of point in list passed to pool.map() 
 
-        Notes:
+        Notes
         ------
         To be combined with method in MesoModel.find_obsevers_parallel()
         """
@@ -992,7 +999,7 @@ class FindObs_root_parallel(object):
         """
         Wrapper of find_observer_Gauss(): execute task in parallel on a list of points
 
-        Parameters:
+        Parameters
         -----------
         points: list of d+1 float, d is the spatial dimension of micro_model
 
@@ -1002,7 +1009,7 @@ class FindObs_root_parallel(object):
         initial_guesses: DEPRECATED, the initial guesses at each point
             if not passed, the point-wise velocity from micro-model is used.
 
-        Returns:
+        Returns
         --------
 
         successes: list of lists
@@ -1073,11 +1080,11 @@ class spatial_box_filter(object):
         """
         Method to change the width of the filter. 
 
-        Parameters:
+        Parameters
         -----------
         filter_width: float
 
-        Returns:
+        Returns
         --------
         None
         """
@@ -1087,11 +1094,11 @@ class spatial_box_filter(object):
         """
         Method to change the micro_model to be filtered. 
 
-        Parameters:
+        Parameters
         -----------
         micro_model: instance of micro_model class
 
-        Returns:
+        Returns
         --------
         None
         """
@@ -1103,16 +1110,16 @@ class spatial_box_filter(object):
         Build unit vectors orthogonal to observer U
         U has to be normalized to -1.
 
-        Parameters:
+        Parameters
         -----------
         U: np.array of shape (1+spatial_dims,)
 
-        Returns:
+        Returns
         --------
         list of spatial_dims numpy arrays of shape (1+spatial_dims,) 
         which complete U to a orthonormal tetrad
 
-        Notes:
+        Notes
         ------
         only the spatial legs of the tetrad are returned
         """
@@ -1136,7 +1143,7 @@ class spatial_box_filter(object):
         sample points in the spatial directions adapted to observer. Finally, approximate 
         the filter integral as a Riemann sum.
 
-        Parameters:
+        Parameters
         -----------
         var_str: string corresponding to a variable of the micro_model
 
@@ -1149,11 +1156,11 @@ class spatial_box_filter(object):
             
         num_points: integer, number of sample points in each spatial direction. 
 
-        Returns: 
+        Returns
         --------
         nd.array with shape of the variable, the box_filtered quantity. 
 
-        Notes: 
+        Notes 
         ------
         Current version uses interpolated values. Should this be too expensive, change
         get_interpol_var for get_var_gridpoint! 
@@ -1245,7 +1252,7 @@ class spatial_box_filter(object):
         """
         Wrapper of filter_var_point(): filter a variable in the micro_model given a list of points and observers.
 
-        Parameters:
+        Parameters
         -----------
         var_str: string corresponding to a variable in the micro_model
 
@@ -1256,11 +1263,11 @@ class spatial_box_filter(object):
         sample_method, num_points: string, int passed to filter method at a point to choose how to 
             sample the d-volume for box filtering. 
 
-        Returns:
+        Returns
         --------
         List with the filtered var (np.float or nd.array depending on var_str) at all points
 
-        Notes:
+        Notes
         ------
         Current version uses interpolated values. Should this be too expensive, change
         get_interpol_var for get_var_gridpoint!
@@ -1280,7 +1287,7 @@ class spatial_box_filter(object):
         Computed the filtered variable using the inbuilt scipy quad method and the interpolated 
         values of the quantity. 
 
-        Parameters: 
+        Parameters 
         -----------
         var_str: string, must correspond to a string in the micro_model 
         
@@ -1288,11 +1295,11 @@ class spatial_box_filter(object):
 
         observer: nd.array of shape (1+spatial_dims,)
 
-        Returns: 
+        Returns 
         --------
         The filtered quantity at the point, or none if the dimensionality is more than 3+1.
 
-        Notes:
+        Notes
         ------
         Much slower than corresponding filter_var_manypoints_ip method, this has been implemented
         to check the accuracy of the alternative methods. 
@@ -1394,6 +1401,21 @@ class box_filter_parallel(object):
         so can be done once for all workers within a process managed by pool.
 
         Currently: gauss-legendre quadrature of order 3.
+
+        Parameters
+        ----------
+
+        spatial_dims: integer
+
+        filter_width: float
+
+        grid: list of list of floats
+
+            the grid of the micro_model
+
+        var: np.array()
+
+            the variable to be filtered
         """
         global abstract_coords
         global totws
@@ -1433,27 +1455,24 @@ class box_filter_parallel(object):
         The task is a combination of what has been split into multiple methods 
         in the serial version of this class. 
 
-        Parameters:
+        Parameters
         -----------
-        packed_args: [[point, observer, [vars_to_be_filtered]], position]
+        point: list of floats
 
-            point: list of floats
-                the point at which filtering
+            the point at which filtering
 
-            observer: nd.array
-                the observer wrt which filtering
+        observer: nd.array
 
-            [vars_to_be_filtered]: list of strs
-                strings corresponding to vars in micro_model to be filtered
-            
-            position: integer
-                number of specific point etc in larger list passed to pool.map()
-        
-        Returns:
+            the observer wrt which filtering
+
+        pos_in_list_points
+            the position in the list of points passed to pool.starmap()
+
+        Returns
         --------
-        position: same as input
+        position: same as input 'pos_in_list_points'
             
-        filtered_vars: list containing vars corresponding to pass list, filtered
+        filtered_var: list containing vars corresponding to pass list, filtered
             at point 'point' wrt observer 'observer'
 
         """
@@ -1500,29 +1519,30 @@ class box_filter_parallel(object):
         Wrapper of filter_var_point_gauss(): execute the task in parallel with n_cpus processes 
         given a list of points, observers and vars.
 
-        Parameters: 
+        Parameters
         -----------
 
-        list_packed_args: [[point,observer, [vars_to_be_filtered]]]
-
+        points_observers: [[point1, observer1], [point2,observer2], ...]
             point: list of floats
-
             observer: nd.array 
 
-            [vars_to_be_filtered]: list of strs
-                each item must match a var in micromodel
+        var:  str
+            must match a var in micromodel
 
         n_cpus: int
             number of processes
 
-        Returns:
+        Returns
         --------
+
         position_in_list: list of integers
-            position in original list of points at which filtering
+            position in original list of points at which filtering.
             Required as pool.map not necessarily returns processes in order
 
-        filtered_vars: list of lists containing filtered vars
+        filtered_vars
 
+        Notes
+        -----
         there is no default value for n_cpus so that this has to be passed 
         explicitely in the tests below, or decided at the MesoModel level. 
         """
