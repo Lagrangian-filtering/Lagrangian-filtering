@@ -1,0 +1,36 @@
+# CONFIGURATION FILE test_meso3D.py
+#################################################
+
+[Directories]
+
+hdf5_dir = /scratch/tc2m23/3D_tests/hydro/subsequent_snaps/128^3/METHOD/ET_05
+
+figures_dir = 
+
+pickled_files_dir = /scratch/tc2m23/3D_tests/hydro/subsequent_snaps/128^3/pickled/smart_mesogrid
+
+meso_pickled_filename = /rHD3D_fw2_t5.pickle
+
+[Micro_model_settings]
+#snapshots_opts are useful in case not all snapshots from METHOD in the folder are required.
+#the options is activated using the first key, while the list refers to the index of the elements of 
+#ordered filenames' list to be retained (list ordered with glob in FileReaders.METHOD_HDF5 )
+
+snapshots_opts = {"fewer_snaps_required": true, 
+                "smaller_list": [5,7,9,11,13]}
+
+
+[Meso_model_settings]
+
+meso_grid = {"t_range": [5.03125, 5.109375], "x_range": [0.1, 0.9], "y_range": [0.1, 0.9], "z_range": [0.1, 0.9], 
+            "coarse_grain_factor": 4, "coarse_grain_time": true}
+
+meso_grid_smart = {"num_T_slices": 3, "x_range": [0.04, 0.96], "y_range": [0.04, 0.96], 
+                    "z_range": [0.04, 0.96], "coarse_grain_factor": 2}
+
+filtering_options = {"box_len_ratio": 2.0, "filter_width_ratio": 2.0} 
+
+slices_T_derivs = [1]
+
+n_cpus = 40
+

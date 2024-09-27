@@ -1,0 +1,33 @@
+# CONFIGURATION FILE visualize_3Dslices.py
+#################################################
+
+[Directories]
+
+hdf5_dir = /scratch/tc2m23/3D_tests/hydro/subsequent_snaps/128^3/METHOD/ET_11
+
+figures_dir = /scratch/tc2m23/3D_tests/hydro/subsequent_snaps/128^3/figures
+
+pickled_files_dir = /scratch/tc2m23/3D_tests/hydro/subsequent_snaps/128^3/pickled/smart_mesogrid
+
+pickled_filename = /rHD3D_fw4_t8.pickle
+
+[Micro_model_settings]
+#snapshots_opts are useful in case not all snapshots from METHOD in the folder are required.
+#the options is activated using the first key, while the list refers to the index of the elements of 
+#ordered filenames' list to be retained (list ordered with glob in FileReaders.METHOD_HDF5 )
+
+snapshots_opts = {"fewer_snaps_required": true, 
+                "smaller_list": [9]}
+
+
+[Plot_settings]
+# method sets that used for producing difference plots: set it to 'interpolate' when plotting models with different grids
+# interp_dims is relevant when 'interpolate' method is used: should be set to the dims of the coarser grid
+# Else, set method to "raw_data" to use gridded data directly 
+
+plot_ranges = {"t": 8.07, "slicing_axis": 3, "slicing_const": 0.5, "range_1": [0.04, 0.96], "range_2": [0.04, 0.96]}
+
+save_plot = true 
+
+
+
