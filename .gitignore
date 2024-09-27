@@ -1,2 +1,2 @@
 # ignore ALL .pyc files
-**.log
+**.pyc
