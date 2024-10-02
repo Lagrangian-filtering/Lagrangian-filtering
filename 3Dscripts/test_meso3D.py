@@ -78,35 +78,35 @@ if __name__ == '__main__':
     print('Xmin, Xmax: {}-{}\nYmin, Ymax: {}-{}\nZmin, Zmax: {}-{}\n'.format(Xmin, Xmax, Ymin, Ymax, Zmin, Zmax))
     print('Tot num points: {}\n'.format(num_points), flush=True)
 
-    # ###################################################### 
-    # # SETTING UP THE MESO MODEL USING setup_meso_grid()
-    # ######################################################
-    # start_time = time.perf_counter()
-    # meso_grid = json.loads(config['Meso_model_settings']['meso_grid'])
-    # filtering_options = json.loads(config['Meso_model_settings']['filtering_options'])
+    # # ###################################################### 
+    # # # SETTING UP THE MESO MODEL USING setup_meso_grid()
+    # # ######################################################
+    # # start_time = time.perf_counter()
+    # # meso_grid = json.loads(config['Meso_model_settings']['meso_grid'])
+    # # filtering_options = json.loads(config['Meso_model_settings']['filtering_options'])
 
-    # coarse_factor = meso_grid['coarse_grain_factor']
-    # coarse_time = meso_grid['coarse_grain_time']
+    # # coarse_factor = meso_grid['coarse_grain_factor']
+    # # coarse_time = meso_grid['coarse_grain_time']
 
-    # t_range = meso_grid['t_range']
-    # x_range = meso_grid['x_range']
-    # y_range = meso_grid['y_range']
-    # z_range = meso_grid['z_range']
+    # # t_range = meso_grid['t_range']
+    # # x_range = meso_grid['x_range']
+    # # y_range = meso_grid['y_range']
+    # # z_range = meso_grid['z_range']
 
-    # box_len_ratio = float(filtering_options['box_len_ratio'])
-    # filter_width_ratio =  float(filtering_options['filter_width_ratio'])
+    # # box_len_ratio = float(filtering_options['box_len_ratio'])
+    # # filter_width_ratio =  float(filtering_options['filter_width_ratio'])
 
-    # box_len = box_len_ratio * micro_model.domain_vars['dx']
-    # width = filter_width_ratio * micro_model.domain_vars['dx']
-    # find_obs = FindObs_root_parallel(micro_model, box_len)
-    # filter = box_filter_parallel(micro_model, width)
-    # meso_model = resHD_3D(micro_model, find_obs, filter) 
-    # meso_model.setup_meso_grid([t_range, x_range, y_range, z_range], coarse_factor = coarse_factor, coarse_time = coarse_time)
-    # print('Finished setting up the meso_grid.')
-    # num_points = meso_model.domain_vars['Nt'] * meso_model.domain_vars['Nx'] * meso_model.domain_vars['Ny'] * meso_model.domain_vars['Nz']
-    # print('Num meso_slices: {}'.format(meso_model.domain_vars['Nt']), flush=True)
-    # print('Tot num points: {}\n'.format(num_points), flush=True)
-    # ######################################################
+    # # box_len = box_len_ratio * micro_model.domain_vars['dx']
+    # # width = filter_width_ratio * micro_model.domain_vars['dx']
+    # # find_obs = FindObs_root_parallel(micro_model, box_len)
+    # # filter = box_filter_parallel(micro_model, width)
+    # # meso_model = resHD_3D(micro_model, find_obs, filter) 
+    # # meso_model.setup_meso_grid([t_range, x_range, y_range, z_range], coarse_factor = coarse_factor, coarse_time = coarse_time)
+    # # print('Finished setting up the meso_grid.')
+    # # num_points = meso_model.domain_vars['Nt'] * meso_model.domain_vars['Nx'] * meso_model.domain_vars['Ny'] * meso_model.domain_vars['Nz']
+    # # print('Num meso_slices: {}'.format(meso_model.domain_vars['Nt']), flush=True)
+    # # print('Tot num points: {}\n'.format(num_points), flush=True)
+    # # ######################################################
     
     
     # ######################################################
