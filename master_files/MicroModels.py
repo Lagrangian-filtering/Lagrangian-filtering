@@ -467,3 +467,64 @@ class IdealHD_3D(object):
         self.vars = self.prim_vars
         self.vars.update(self.aux_vars)
         self.vars.update(self.structures)
+
+    ########################################################################
+    # UNSUCCESFUL ATTEMPT TO PARALLELIZE SET-UP STRUCTURES: no speed-up 
+    ########################################################################
+    # @staticmethod
+    # def setup_structures_task(W, vx, vy, vz, n, h, p, idxs):
+    #     """
+    #     Task to be executed in parallel to set-up the micro data
+
+    #     Notes
+    #     -----
+    #     This becomes useful in the 3D case for sufficiently large datasets. 
+
+    #     Test whether you get a speed up with an initializer (that sets the metric)
+    #     """
+    #     metric = np.zeros((4,4))
+    #     metric[0,0]= -1
+    #     metric[1,1] = metric[2,2] = metric[3,3] = +1
+        
+    #     bar_vel = np.array([W, W*vx, W*vy, W*vz])
+    #     BC = np.multiply(n, bar_vel)
+    #     SET = np.multiply(n * h, np.outer(bar_vel, bar_vel)) + np.multiply(p, metric)
+
+    #     return bar_vel, BC, SET, idxs
+    
+    # def setup_structures_parallel(self, n_cpus):
+        # """
+        # werk
+        # """
+        # self.structures["BC"] = np.zeros((self.domain_vars['nt'],self.domain_vars['nx'],self.domain_vars['ny'], 
+        #                                   self.domain_vars['nz'], 4))
+        # self.structures["bar_vel"] = np.zeros((self.domain_vars['nt'],self.domain_vars['nx'],self.domain_vars['ny'],
+        #                                        self.domain_vars['nz'], 4))
+        # self.structures["SET"] = np.zeros((self.domain_vars['nt'],self.domain_vars['nx'],self.domain_vars['ny'],
+        #                                    self.domain_vars['nz'],4,4))
+    
+        # args_for_pool = []
+        # for h in range(self.domain_vars['nt']):
+        #     for i in range(self.domain_vars['nx']):
+        #         for j in range(self.domain_vars['ny']):
+        #             for k in range(self.domain_vars['nz']):
+        #                     W = self.aux_vars['W'][h,i,j,k]
+        #                     vx = self.prim_vars['vx'][h,i,j,k]
+        #                     vy = self.prim_vars['vy'][h,i,j,k]
+        #                     vz = self.prim_vars['vz'][h,i,j,k]
+        #                     n = self.prim_vars['n'][h,i,j,k]
+        #                     entalpy = self.aux_vars['h'][h,i,j,k]
+        #                     p = self.prim_vars['p'][h,i,j,k]
+        #                     args_for_pool.append((W, vx, vy, vz, n, entalpy, p, [h,i,j,k]))
+                        
+        # with mp.Pool(processes=n_cpus) as pool:
+        #     print('Setting up micro structures in parallel with {} processes'.format(pool._processes), flush=True)
+        #     for result in pool.starmap(IdealHD_3D.setup_structures_task, args_for_pool):
+        #         h,i,j,k = tuple(result[3])
+        #         self.structures['bar_vel'][h,i,j,k] = result[0]
+        #         self.structures['BC'][h,i,j,k] = result[1]
+        #         self.structures['SET'][h,i,j,k] = result[2]
+                
+
+
+
