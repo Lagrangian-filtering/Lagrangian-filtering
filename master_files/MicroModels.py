@@ -525,6 +525,8 @@ class IdealHD_3D(object):
         #         self.structures['BC'][h,i,j,k] = result[1]
         #         self.structures['SET'][h,i,j,k] = result[2]
                 
-
-
+class IdealMHD_2D(object):
+    """
+    """
+    pass
 
