@@ -3,10 +3,10 @@
 # JOB INFO: parallel, single node
 ####################################
 
-#SBATCH --output=output_%A.out
+#SBATCH --output=serial%A.out
 #SBATCH --nodes=1      
 #SBATCH --ntasks=1                
-#SBATCH --time=00:04:00 
+#SBATCH --time=00:10:00 
 
 #SBATCH --mail-type=begin        
 #SBATCH --mail-type=fail 

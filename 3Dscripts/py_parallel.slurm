@@ -6,7 +6,7 @@
 #SBATCH --output=parallel%A.out
 #SBATCH --nodes=1      
 #SBATCH --ntasks=40                
-#SBATCH --time=03:00:00
+#SBATCH --time=01:30:00
 
 #SBATCH --mail-type=begin        
 #SBATCH --mail-type=fail 
@@ -28,7 +28,6 @@ conda activate myenv
 # LAUNCHING THE JOBS
 ####################################
 
-# python -u visualize_3Dslices.py config_visualize.txt
-
-python -u test_meso3D.py config_mesomodel.txt
+# python -u test_meso3D.py config_mesomodel.txt
+python -u test_micro3D.py config_mesomodel.txt
 

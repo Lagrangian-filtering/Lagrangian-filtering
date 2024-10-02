@@ -78,7 +78,7 @@ if __name__ == '__main__':
         model = meso_model
     else: 
         model = micro_model
-    vars = ['W', 'vx', 'vy', 'vz', 'n', 'p']
+    vars = ['W', 'vx', 'vy', 'vz', 'p', 'n']
     norms= None #['log', 'symlog', 'symlog', 'symlog', 'log', 'log']
     cmaps = None # ['plasma', 'plasma', 'plasma', 'plasma']
     components = None #[(0,), (1,), (2,), (3,)]
