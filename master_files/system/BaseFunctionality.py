@@ -14,6 +14,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import random
+from scipy import fft
 
 class Base(object):
     """
@@ -192,6 +193,188 @@ class Base(object):
             print(s.getvalue())
             return retval
         return inner
+
+    @staticmethod
+    def get1DFourierTrans_smart(u):
+        """
+        Returns the 1D discrete fourier transform of the variable u along 
+        each direction ready for the power spectrum method.
+
+        Parameters
+        ----------
+        u : ndarray
+            the variable we want the power spectrum of
+
+        Returns
+        -------
+        uhat : array (N,)
+            Fourier transform of u, where N is len(u.shape)
+
+        Notes
+        ------
+        Way slower than the inbuilt routines in scipy 
+        """
+        dims = len(u.shape)
+        NNs = []
+        for d in range(dims):
+            NNs.append(u.shape[d])
+
+        uhats = []
+
+        for d in range(dims):
+            nns = list(NNs)
+            nns[d] = int(nns[d]/2) + 1
+
+            uhat = np.zeros(tuple(nns), dtype=np.complex_)
+
+            for idx in np.ndindex(uhat.shape):
+                k = idx[d]
+                remainig_idxs = list(idx)
+                del remainig_idxs[d]
+                for i in range(NNs[d]): 
+                    real_space_idx = list(remainig_idxs)
+                    real_space_idx.insert(d, i)
+                    
+                    uhat[idx] += u[tuple(real_space_idx)] * np.exp(-(2*np.pi*1j*k*i)/NNs[d])
+            # uhat = uhat/ NNs[d]
+            uhats.append(uhat)
+
+        return uhats 
+
+    @staticmethod
+    def get1DPowerSpectrumSq_smart(u, Ds):
+        """
+        Routine to get the 1D integrated spectra of the input var 'u'. 
+        For e.g. the x-direction: compute the fourier series along the x direction only, 
+        then integrate (the modulus square) along the remaining spatial directions. 
+        Repeat for all the spatial dimensions associated with input 'u'
+
+        Works in any dimension.
+
+        Parameters
+        -----------
+        u: ndarray,
+            the data to compute the power spectra of
+        
+        Ds: list
+            real space grid increments in each direction, must be compatible with u
+
+        Returns
+        -------
+        ndarray of shape (N,) where N is the len(u.shape)
+
+        Notes
+        ------
+        Useful for checking if there is a significant difference in the 1d spectra
+        """
+        dims = len(u.shape)
+        if len(Ds) != dims:
+            print("Data and increments are not compatible")
+            return None
+        
+        NNs = []
+        for d in range(dims):
+            NNs.append(u.shape[d])
+
+        # uhats = get1DFourierTrans_smart(u)
+        uhats = []
+        for i in range(dims):
+            uhat = fft.rfft(u, axis=i, overwrite_x=False)
+            uhats.append(uhat)
+
+            
+        PS = []
+        for d in range(dims):
+            nn = int(NNs[d]/2)
+            ps = np.zeros(nn + 1)
+
+            ds = list(Ds)
+            del ds[d]
+            increment = 1. 
+            for i in range(len(ds)):
+                increment *= float(ds[i])
+
+            uhat = uhats[d]
+            for idx in np.ndindex(uhat.shape):
+                k = int(idx[d])
+                ps[k] += (np.absolute(uhat[idx]) ** 2) * increment
+
+            ps = ps / np.sum(ps)
+            PS.append(ps)
+        return PS
+
+    @staticmethod
+    def Spectrum3D_annular_avg(u, dx, dy, dz):
+        """
+        Compute the 3D FFT of u. Then, assuming isotropy work out the spectrum 
+        as a function of the wavenumber by integrating over annular ring in 
+        frequency space. Normalization is fixed to make sure the result is an 
+        energy-like spectrum.
+
+        As the normalization is specific to the number of dimensions, this routine 
+        is meant to be used on 3D gridded data only.  
+
+        Parameters
+        ----------
+        u: ndarray
+            the gridded 3D data you want to take the derivative of
+
+        dx, dy, dz: float
+            the grid spacings in each direction 
+
+        Returns
+        -------
+        ndarray: the spectra averaged over the annular rings in frequency space
+
+        Notes
+        -----
+        """
+        Nx, Ny, Nz = u.shape
+        Nmax = math.floor( np.amax([Nx/2, Ny/2, Nz/2]) * np.sqrt(3) )
+
+        Lx, Ly, Lz = dx * Nx , dy * Ny , dz * Nz
+        
+        dk = 2 * np.pi / (np.min([Lx, Ly, Lz]))
+        
+        # computing the mode labels corresponding to each annular ring in frequency space
+        Rps = []
+        lens = []
+        for p in range(math.floor(Nmax)):
+            rp = []
+            for l in range(math.floor(Nx/2)):
+                for m in range(math.floor(Ny/2)):
+                    for n in range(math.floor(Nz/2)):
+                        kx, ky, kz = l * 2 * np.pi / Lx , m * 2 * np.pi / Ly , n * 2 * np.pi / Lz 
+                        ksq = np.sqrt(kx**2 + ky**2 + kz**2)
+                        if ksq >= dk * p and ksq < (p+1)* dk:  
+                            rp.append([l,m,n])
+            
+            lens.append(len(rp))
+            Rps.append(rp)
+
+        uhat = fft.fftn(u, overwrite_x=False)
+        uhat = uhat[:math.ceil(Nx/2), :math.ceil(Ny/2), :math.ceil(Nz/2)]
+
+        # summing over the annular rings labels
+        uhat_mod = np.zeros((Nmax,))
+
+        for kp in range(len(uhat_mod)):
+            relevant_wnums = Rps[kp]
+            for elem in relevant_wnums: 
+                uhat_mod[kp] += np.absolute(uhat[tuple(elem)])**2
+            
+            kmodsq = ((kp+1) * dk)**2 
+            uhat_mod[kp] = kmodsq * uhat_mod[kp] 
+
+            Np = len(relevant_wnums)
+            if Np != 0:
+                uhat_mod[kp] = uhat_mod[kp] / Np
+
+        # normalizing
+        prefactor = (Lx * Ly * Lz) / (Nx * Ny * Nz)**2 
+        prefactor = (prefactor * 4 * np.pi) / (2* np.pi)**3 
+
+        return prefactor * uhat_mod
 
 class MySymLogPlotting(object):
     """
