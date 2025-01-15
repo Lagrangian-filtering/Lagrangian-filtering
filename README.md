@@ -5,8 +5,8 @@ It has been developed by Dr. Thomas Celora, Mr. Marcus J. Hatton and Dr. Ian Haw
 
 Related publications: 
 * [Fibration framework](https://journals.aps.org/prd/abstract/10.1103/PhysRevD.104.084090) 
-* [Lagrangian filtering](https://arxiv.org/abs/2405.13593)
-* [A higher-level strategy](https://arxiv.org/abs/2407.18012)
+* [Lagrangian filtering](https://journals.aps.org/prd/abstract/10.1103/PhysRevD.110.123040)
+* [A higher-level strategy](https://journals.aps.org/prd/abstract/10.1103/PhysRevD.110.123039)
 
 
 # GETTING STARTED 
