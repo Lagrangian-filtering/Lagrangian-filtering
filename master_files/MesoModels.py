@@ -2567,3 +2567,15 @@ class resHD_3D(object):
                                     self.deriv_vars[dstr][h,i,j,k,dir] = self.calculate_derivatives_gridpoint(str, h, i, j, k, dir, order=order) 
                         else: 
                             print('Derivatives not calculated at {}: observer could not be found.'.format(point)) 
+
+
+
+class rMHD_3D(object):
+    """
+    Werk on 3D version 
+    """
+    def __init__(self, micro_model, find_obs, filter, interp_method = 'linear'):
+        """
+        Werk on this: copy from resHD_3D and add stuff
+        """
+        pass
