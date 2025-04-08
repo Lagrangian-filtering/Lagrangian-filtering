@@ -568,6 +568,8 @@ class IdealMHD_3D(object):
             self.aux_vars[str] = []
 
         #Dictionary for structures
+        # The charge current is not in this list because the mesomodels we have in mind are in the 
+        # framework of iMHD. As such storing the micro charge-current is not necessary. 
         self.structures_strs = ("BC", "SET", "Fab") #Fab is the Faraday tensor (not Maxwell)
         self.structures = dict.fromkeys(self.structures_strs)
         for str in self.structures_strs:
@@ -707,6 +709,16 @@ class IdealMHD_3D(object):
             print(f"{var} is not a variable of the model!")
             return None
         
+    def compute_current_point(self, h, i, j, k):
+        """
+        Left for future: to be implemented if meso models is resistive.
+
+        Idea: Add separate routine to compute derivative of B. Then use here to compute 
+        the curl of B. Set the spatial charge in the foliation equal to the curl of B. 
+        Compute the charge density from the assumption of local charge neutrality as v*J 
+        (in the foliation). Then return the four vector
+        """
+        pass
 
     def setup_structures(self):
         """
@@ -754,15 +766,18 @@ class IdealMHD_3D(object):
 
 
                         self.structures['SET'][h,i,j,k,:,:] = np.multiply(rhohstar , np.outer(vel_vec, vel_vec))  + np.multiply(pstar, self.metric ) \
-                                                                + np.outer(ba, ba)
+                                                                - np.outer(ba, ba)
                         
-                        Maxwell_contrav = np.outer(vel_vec, ba) - np.outer(ba, vel_vec)
+                        Maxwell_contrav = np.outer(ba, vel_vec) - np.outer(vel_vec, ba)
                         Maxwell_covar = np.einsum('ij,kl,jl->ik', self.metric, self.metric, Maxwell_contrav )
 
                         self.structures['Fab'][h,i,j,k,:,:] = np.multiply(1/2, np.einsum('ijkl,kl->ij', self.Levi4D, Maxwell_covar) )
                         
 
-                        
+                        # Here is missing the charge four current. This would have to be stored and filtered if the 
+                        # meso model considered is resistive. We for now consider mesomodels within the framework of iMHD
+                        # and then do not compute nor store it. 
+                        # self.structures['ja'][h,i,j,k,:] = self.compute_Current_point(h,i,j,k)
                     
                     
 
