@@ -2603,8 +2603,8 @@ class mfMHD_3D(object):
         for var in self.filter_vars:
             var = []
 
-        # structures are built with rank: (2,0), (1,0), (2,0)
-        self.meso_structures_strs  = ['SET', 'BC', 'Fab']
+        # structures are built with rank: (1,0), (2,0), (2,0)
+        self.meso_structures_strs  = ['BC', 'Fab'] #['BC', 'SET', 'Fab']
         self.meso_structures = dict.fromkeys(self.meso_structures_strs) 
         for var in self.meso_structures:
                 self.meso_structures[var] = []
@@ -2918,7 +2918,7 @@ class mfMHD_3D(object):
         # Setup arrays for structures
         Nt, Nx, Ny, Nz = self.domain_vars['Nt'], self.domain_vars['Nx'], self.domain_vars['Ny'], self.domain_vars['Nz']
         self.meso_structures['BC'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
-        self.meso_structures['SET'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+        # self.meso_structures['SET'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
         self.meso_structures['Fab'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
 
         # Setup arrays for meso_vars 
@@ -3069,7 +3069,7 @@ class mfMHD_3D(object):
         # Setup arrays for structures
         Nt, Nx, Ny, Nz = self.domain_vars['Nt'], self.domain_vars['Nx'], self.domain_vars['Ny'], self.domain_vars['Nz']
         self.meso_structures['BC'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
-        self.meso_structures['SET'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+        # self.meso_structures['SET'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
         self.meso_structures['Fab'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
 
         # Setup arrays for meso_vars 
@@ -3098,6 +3098,120 @@ class mfMHD_3D(object):
         # self.deriv_vars['D_n_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
         self.deriv_vars['D_B_fol'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
         return None
+
+
+    def find_observers_parallel(self, n_cpus):
+        """
+        Method to find observers at all points on meso-grid, parallelized version. 
+        The observers found (and relative errors) are saved in the dictionary self.filter_vars.
+        Set up the entry self.filter_vars['U_success'] as a dictionary with (tuples of) indices
+        on the meso_grid as keys, and bool as values (true if the observer has been found, false otherwise)
+
+        Parameters:
+        -----------
+
+        n_cpus: int
+            number of processes to run in parallel 
+
+        Notes:
+        ------
+        Requires setup_meso_grid() to be called first. 
+
+        This method relies on the routine find_obs.find_observers_parallel(), - check Filters.py
+        Meso_class must be initialized with parallelized class for finding observers. 
+        """
+        ts = self.domain_vars['T']
+        xs = self.domain_vars['X']
+        ys = self.domain_vars['Y']
+        zs = self.domain_vars['Z']
+
+        t_idxs = np.arange(len(ts))
+        x_idxs = np.arange(len(xs))
+        y_idxs = np.arange(len(ys))
+        z_idxs = np.arange(len(zs))
+
+        points = []
+        for elem in product(ts,xs,ys,zs):
+            points.append(list(elem))
+
+        indices_meso_grid = []
+        for elem in product(t_idxs, x_idxs, y_idxs, z_idxs):
+            indices_meso_grid.append(elem)
+
+        successes, failures = self.find_obs.find_observers_parallel(points, n_cpus)
+
+        for i in range(len(successes[0])):
+            point_indxs_meso_grid = indices_meso_grid[successes[0][i]]
+            self.filter_vars['U'][point_indxs_meso_grid] = successes[1][i]
+            self.filter_vars['U_errors'][point_indxs_meso_grid] = successes[2][i]
+            self.filter_vars['U_success'].update({(point_indxs_meso_grid): True})
+
+        if len(failures)!=0:
+            print('Observers could not be found at the following points:\n')
+            for i in range(len(failures)):
+                failed_idxs_meso_grid = indices_meso_grid[failures[i]]
+                print('{}\n'.format(failed_idxs_meso_grid))
+
+    def filter_micro_vars_parallel(self, n_cpus):
+        """
+        Filter all meso_model structures AND micro pressure at all points on the meso-grid. 
+        Note this would require the grid to be set up wisely so to avoid
+        problems at the boundaries. 
+        
+        This method relies on filter_vars_parallel implemented separately for the 
+        filter class, e.g. as in box_filter_parallel
+        
+        Parameters:
+        -----------
+
+        n_cpus: int
+            number of processes for parallelization
+
+        Notes:
+        ------
+        Requires setup_meso_grid() to be called first.
+        Also find_observers() should be called first, although not doing so won't crash it. 
+        """
+        ts = self.domain_vars['T']
+        xs = self.domain_vars['X']
+        ys = self.domain_vars['Y']
+        zs = self.domain_vars['Z']
+
+        t_idxs = np.arange(len(ts))
+        x_idxs = np.arange(len(xs))
+        y_idxs = np.arange(len(ys))
+        z_idxs = np.arange(len(zs))
+
+        points = []
+        for elem in product(ts,xs,ys,zs):
+            points.append(list(elem))
+
+        indices_meso_grid = []
+        for elem in product(t_idxs, x_idxs, y_idxs, z_idxs):
+            indices_meso_grid.append(elem)
+
+        observers = []
+        for elem in product(t_idxs, x_idxs, y_idxs, z_idxs):
+            if self.filter_vars['U_success'][elem]:
+                observers.append(self.filter_vars['U'][elem])
+            else:
+                print('Observers are not computed on (parts of) the grid!')
+                return None
+
+        vars = ['BC', 'SET', 'Fab']
+        points_observers = []
+        for i in range(len(points)):
+            points_observers.append([points[i], observers[i]])
+            
+        filtered_vars = dict.fromkeys(vars)
+        for var in vars:
+            positions, filtered_vars[var] = self.filter.filter_var_parallel(points_observers, var, n_cpus)
+
+        for i in range(len(positions)):
+            point_indxs_meso_grid = indices_meso_grid[positions[i]]
+            self.meso_structures['BC'][point_indxs_meso_grid] = filtered_vars['BC'][i]
+            # self.meso_structures['SET'][point_indxs_meso_grid] = filtered_vars['SET'][i]
+            self.meso_vars['Fab'][point_indxs_meso_grid] = filtered_vars['Fab'][i]
 
 class minitMHD_3D(object):
     """
@@ -3141,8 +3255,8 @@ class minitMHD_3D(object):
         for var in self.filter_vars:
             var = []
 
-        # structures are built with rank: (2,0), (1,0), (2,0)
-        self.meso_structures_strs  = ['SET', 'BC', 'Fab']
+        # structures are built with rank: (1,0), (2,0), (2,0)
+        self.meso_structures_strs  = ['BC', 'Fab'] #['BC', 'SET', 'Fab']
         self.meso_structures = dict.fromkeys(self.meso_structures_strs) 
         for var in self.meso_structures:
                 self.meso_structures[var] = []
@@ -3460,7 +3574,7 @@ class minitMHD_3D(object):
         # Setup arrays for structures
         Nt, Nx, Ny, Nz = self.domain_vars['Nt'], self.domain_vars['Nx'], self.domain_vars['Ny'], self.domain_vars['Nz']
         self.meso_structures['BC'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
-        self.meso_structures['SET'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+        # self.meso_structures['SET'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
         self.meso_structures['Fab'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
 
         # Setup arrays for meso_vars 
@@ -3611,7 +3725,7 @@ class minitMHD_3D(object):
         # Setup arrays for structures
         Nt, Nx, Ny, Nz = self.domain_vars['Nt'], self.domain_vars['Nx'], self.domain_vars['Ny'], self.domain_vars['Nz']
         self.meso_structures['BC'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
-        self.meso_structures['SET'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+        # self.meso_structures['SET'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
         self.meso_structures['Fab'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
 
         # Setup arrays for meso_vars 
@@ -3640,3 +3754,120 @@ class minitMHD_3D(object):
         # self.deriv_vars['D_n_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
         # self.deriv_vars['D_B_fol'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
         return None
+    
+
+    def find_observers_parallel(self, n_cpus):
+        """
+        Method to find observers at all points on meso-grid, parallelized version. 
+        The observers found (and relative errors) are saved in the dictionary self.filter_vars.
+        Set up the entry self.filter_vars['U_success'] as a dictionary with (tuples of) indices
+        on the meso_grid as keys, and bool as values (true if the observer has been found, false otherwise)
+
+        Parameters:
+        -----------
+
+        n_cpus: int
+            number of processes to run in parallel 
+
+        Notes:
+        ------
+        Requires setup_meso_grid() to be called first. 
+
+        This method relies on the routine find_obs.find_observers_parallel(), - check Filters.py
+        Meso_class must be initialized with parallelized class for finding observers. 
+        """
+        ts = self.domain_vars['T']
+        xs = self.domain_vars['X']
+        ys = self.domain_vars['Y']
+        zs = self.domain_vars['Z']
+
+        t_idxs = np.arange(len(ts))
+        x_idxs = np.arange(len(xs))
+        y_idxs = np.arange(len(ys))
+        z_idxs = np.arange(len(zs))
+
+        points = []
+        for elem in product(ts,xs,ys,zs):
+            points.append(list(elem))
+
+        indices_meso_grid = []
+        for elem in product(t_idxs, x_idxs, y_idxs, z_idxs):
+            indices_meso_grid.append(elem)
+
+        successes, failures = self.find_obs.find_observers_parallel(points, n_cpus)
+
+        for i in range(len(successes[0])):
+            point_indxs_meso_grid = indices_meso_grid[successes[0][i]]
+            self.filter_vars['U'][point_indxs_meso_grid] = successes[1][i]
+            self.filter_vars['U_errors'][point_indxs_meso_grid] = successes[2][i]
+            self.filter_vars['U_success'].update({(point_indxs_meso_grid): True})
+
+        if len(failures)!=0:
+            print('Observers could not be found at the following points:\n')
+            for i in range(len(failures)):
+                failed_idxs_meso_grid = indices_meso_grid[failures[i]]
+                print('{}\n'.format(failed_idxs_meso_grid))
+
+    def filter_micro_vars_parallel(self, n_cpus):
+        """
+        Filter all meso_model structures AND micro pressure at all points on the meso-grid. 
+        Note this would require the grid to be set up wisely so to avoid
+        problems at the boundaries. 
+        
+        This method relies on filter_vars_parallel implemented separately for the 
+        filter class, e.g. as in box_filter_parallel
+        
+        Parameters:
+        -----------
+
+        n_cpus: int
+            number of processes for parallelization
+
+        Notes:
+        ------
+        Requires setup_meso_grid() to be called first.
+        Also find_observers() should be called first, although not doing so won't crash it. 
+        """
+        ts = self.domain_vars['T']
+        xs = self.domain_vars['X']
+        ys = self.domain_vars['Y']
+        zs = self.domain_vars['Z']
+
+        t_idxs = np.arange(len(ts))
+        x_idxs = np.arange(len(xs))
+        y_idxs = np.arange(len(ys))
+        z_idxs = np.arange(len(zs))
+
+        points = []
+        for elem in product(ts,xs,ys,zs):
+            points.append(list(elem))
+
+        indices_meso_grid = []
+        for elem in product(t_idxs, x_idxs, y_idxs, z_idxs):
+            indices_meso_grid.append(elem)
+
+        observers = []
+        for elem in product(t_idxs, x_idxs, y_idxs, z_idxs):
+            if self.filter_vars['U_success'][elem]:
+                observers.append(self.filter_vars['U'][elem])
+            else:
+                print('Observers are not computed on (parts of) the grid!')
+                return None
+
+        vars = ['BC', 'SET', 'Fab']
+        points_observers = []
+        for i in range(len(points)):
+            points_observers.append([points[i], observers[i]])
+            
+        filtered_vars = dict.fromkeys(vars)
+        for var in vars:
+            positions, filtered_vars[var] = self.filter.filter_var_parallel(points_observers, var, n_cpus)
+
+        for i in range(len(positions)):
+            point_indxs_meso_grid = indices_meso_grid[positions[i]]
+            self.meso_structures['BC'][point_indxs_meso_grid] = filtered_vars['BC'][i]
+            # self.meso_structures['SET'][point_indxs_meso_grid] = filtered_vars['SET'][i]
+            self.meso_vars['Fab'][point_indxs_meso_grid] = filtered_vars['Fab'][i]
+
+
+    
