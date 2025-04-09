@@ -23,6 +23,14 @@ from Filters import *
 from Visualization import *
 from Analysis import *
 
+# These are the symbols, so be careful when using these to construct vectors!
+levi3D = np.array([[[ np.sign(i-j) * np.sign(j- k) * np.sign(k-i) \
+                      for k in range(3)]for j in range(3) ] for i in range(3) ])
+
+levi4D = np.array([[[[ np.sign(i - j) * np.sign(j - k) * np.sign(k - l) * np.sign(i - l) \
+                       for l in range(4)] for k in range(4) ] for j in range(4)] for i in range(4)])
+
+
 class resHD2D(object):
     """
     Class for storing filtered data of 2D hydrodynamic simulations (of turbulence). 
@@ -2569,13 +2577,530 @@ class resHD_3D(object):
                             print('Derivatives not calculated at {}: observer could not be found.'.format(point)) 
 
 
-
-class rMHD_3D(object):
+class mfMHD_3D(object):
     """
-    Werk on 3D version 
+    Idea: interpret filtered data in terms of (alpha-beta) mean field model
     """
     def __init__(self, micro_model, find_obs, filter, interp_method = 'linear'):
         """
-        Werk on this: copy from resHD_3D and add stuff
+        Sets up the main variables and dictionaries of the class. 
+
+        Parameters
+        -----------
+
+        micro_model: instance of a micromodel
+            the fine-scale unfiltered data
+
+        find_obs: instance of a class for finding the filtering observers (e.g. via root-finding)
+
+        filter: instance of a class for performing the filtering on the structures
+
+        interp_method: optional method for interpolation
         """
-        pass
+        self.micro_model = micro_model
+        self.find_obs = find_obs
+        self.filter = filter
+        self.spatial_dims = 3
+        self.interp_method = interp_method
+
+        self.domain_int_strs = ('Nt','Nx','Ny')
+        self.domain_float_strs = ("Tmin","Tmax","Xmin","Xmax","Ymin","Ymax","Zmin", "Zmax", "Dt","Dx","Dy","Dz")
+        self.domain_array_strs = ("T","X","Y","Z","Points")
+        self.domain_vars = dict.fromkeys(self.domain_int_strs+self.domain_float_strs+self.domain_array_strs)
+        for var in self.domain_vars: 
+            self.domain_vars[var] = []
+        
+        self.metric = np.zeros((4,4))
+        self.metric[0,0] = -1
+        self.metric[1,1] = self.metric[2,2] = self.metric[3,3] =  +1
+
+        self.filter_vars_strs = ['U', 'U_errors', 'U_success']
+        self.filter_vars = dict.fromkeys(self.filter_vars_strs)
+        for var in self.filter_vars:
+            var = []
+
+        self.meso_structures_strs  = ['SET', 'BC', 'Fab']
+        self.meso_structures = dict.fromkeys(self.meso_structures_strs) 
+        for var in self.meso_structures:
+                self.meso_structures[var] = []
+
+        # FOCUS ON THE MAGNETIC FIELD ONLY FOR NOW: COMMENTING OUT THE FLUID BITS, TO BE ADDED LATER IF NEEDED IN CALIBRATION
+        # self.meso_scalars_strs = ['eps_tilde', 'n_tilde', 'p_tilde', 'p_filt', 'eos_res', 'Pi_res', 'T_tilde']
+        # self.meso_vectors_strs = ['u_tilde', 'q_res']
+        # self.meso_r2tensors_strs = ['pi_res']
+        # self.meso_vars_strs = self.meso_scalars_strs + self.meso_vectors_strs + self.meso_r2tensors_strs
+
+        self.meso_vectors_strs = ['B_fol', 'Eps_emf']
+        self.meso_vars = dict.fromkeys(self.meso_vectors_strs)
+
+        self.coefficient_strs = ["Gamma"]
+        self.coefficients = dict.fromkeys(self.coefficient_strs)
+        self.coefficients['Gamma'] = 4.0/3.0
+
+        # Dictionary with stencils and coefficients for finite differencing (this is for first derivatives)
+        self.differencing = dict.fromkeys((2, 3)) #key gives the accuracy 
+        self.differencing[2] = dict.fromkeys(['fw', 'bw', 'cen']) 
+        self.differencing[2]['fw'] = {'coefficients' : [-1, 1] , 'stencil' : [0, 1]}
+        self.differencing[2]['bw'] = {'coefficients' : [1, -1] , 'stencil' : [0, -1]}
+        self.differencing[2]['cen'] = {'coefficients' : [-1/2., 0, 1/2.] , 'stencil' : [-1, 0, 1]}
+        self.differencing[3] = dict.fromkeys(['fw', 'bw', 'cen']) 
+        self.differencing[3]['fw'] = {'coefficients' : [-3/2., 2., -1/2.] , 'stencil' : [0, 1, 2]}
+        self.differencing[3]['bw'] = {'coefficients' : [3/2., -2., 1/2.] , 'stencil' : [0, -1, -2]}
+        self.differencing[3]['cen'] = {'coefficients' : [1/12., -2/3., 0., 2/3., -1/12.] , 'stencil' : [-2, -1, 0, 1, 2]}
+
+
+        # dictionary with non-local quantities (keys must match one of meso_vars or structure)
+        # self.nonlocal_vars_strs = ['u_tilde', 'T_tilde', 'n_tilde', 'eps_tilde'] 
+        self.nonlocal_vars_strs = ['B_fol'] 
+        Dstrs = ['D_' + i for i in self.nonlocal_vars_strs]
+        self.deriv_vars = dict.fromkeys(Dstrs)
+
+        # Additional, closure-scheme specific vars must be added appropriately using model_residuals()
+        # self.all_var_strs = self.meso_vars_strs  + Dstrs + self.meso_structures_strs
+
+        # Run some simple compatibility test... 
+        compatible = True
+        error = ''
+        if self.spatial_dims != micro_model.get_spatial_dims(): 
+            compatible = False
+            error += '\nError: different dimensions.'
+        for struct in self.meso_structures_strs:
+            if struct not in self.micro_model.get_structures_strs():
+                compatible = False
+                error += f'\nError: {struct} not in micro_model!'
+
+        if not compatible:
+            print("Meso and Micro models are incompatible:"+error) 
+
+        self.labels_var_dict = {'SET' : r'$<T^{ab}>$', 
+                                'BC' : r'$<n^a>$',
+                                'U' : r'$U^a$',
+                                'Gamma' : r'$\Gamma$',
+                                'eos_res' : r'$M$',
+                                'Pi_res' : r'$\tilde{\Pi}$',
+                                'q_res' : r'$\tilde{q}^a$',
+                                'pi_res' : r'$\tilde{\pi}^{ab}$',
+                                'eps_tilde' : r'$\tilde{\varepsilon}$',
+                                'n_tilde' : r'$\tilde{n}$',
+                                'p_tilde' : r'$\tilde{p}$',
+                                'p_filt' : r'$<p>$',
+                                'T_tilde' : r'$\tilde{T}$',
+                                'u_tilde' : r'$\tilde{u}^a$',
+                                'D_u_tilde' : r'$\nabla_{a}\tilde{u}^b$',
+                                'D_T_tilde' : r'$\nabla_{a}\tilde{T}$',
+                                'D_n_tilde' : r'$\nabla_{a}\tilde{n}$',
+                                'D_eps_tilde' : r'$\nabla_{a}\tilde{\varepsilon}$',
+                                'n_tilde_dot' : r'$\dot{\tilde{n}}$',
+                                'T_tilde_dot' : r'$\dot{\tilde{T}}$',
+                                'sD_T_tilde': r'$D_{a}\tilde{T}$',
+                                'sD_n_tilde': r'$D_{a}\tilde{n}$',
+                                'shear_tilde' : r'$\tilde{\sigma}^{ab}$',
+                                'acc_tilde' : r'$\tilde{a}^a$',
+                                'exp_tilde' : r'$\tilde{\theta}$',
+                                'Theta_tilde' : r'$\tilde{\Theta}^a$',
+                                'eta' : r'$\eta$',
+                                'zeta' : r'$\zeta$',
+                                'kappa' : r'$\kappa$',
+                                'Pi_res_sq' : r'$\tilde{\Pi}^2$',
+                                'pi_res_sq' : r'$\tilde{\pi}_{ab}\tilde{\pi}^{ab}$',
+                                'shear_sq' : r'$\tilde{\sigma}_{ab}\tilde{\sigma}^{ab}$',
+                                'Theta_sq': r'$\tilde{\Theta}_a\tilde{\Theta}^a$',
+                                'q_res_sq': r'$\tilde{q}_a \tilde{q}^a$',
+                                'det_shear': r'$det(\sigma)$',
+                                'vort_sq' : r'$\omega_{ab}\omega^{ab}$',
+                                'acc_mag': r'$|a|$', 
+                                'sD_n_tilde_sq' : r'$D_{a}\tilde{n}D^{a}\tilde{n}$',
+                                'dot_Dn_Theta' : r'$D_{a}\tilde{n}\Theta^{a}$'}
+        
+    def update_labels_dict(self, entry_dict):
+        """
+        Add/change dictionry key/value entry for figure labels.
+        """
+        self.labels_var_dict.update(entry_dict)
+
+    def set_find_obs(self, find_obs):
+        self.find_obs = find_obs
+
+    def set_filter(self, filter):
+        self.filter = filter
+
+    def get_all_var_strs(self): 
+        return list(self.meso_vars.keys())  + list(self.deriv_vars.keys()) + list(self.meso_structures.keys()) + \
+            list(self.filter_vars.keys())
+
+    def get_gridpoints(self): 
+        return self.domain_vars['Points']
+    
+    def get_model_name(self):
+        return 'mfMHD_3D'
+    
+    def set_find_obs_method(self, find_obs):
+        self.find_obs = find_obs
+
+    def get_interpol_var(self, var, point):
+        """
+        Returns quantity corresponding to input str 'var' evaluated 
+        at the input point 'point' via interpolation. 
+
+        Parameters
+        ----------
+        var: str corresponding to structure/ meso vars/ deriv vars or filter vars
+            (check init method)
+            
+        point : list of floats
+            ordered coordinates: t,x,y,z
+
+        Return
+        ------
+        Interpolated values/arrays corresponding to variable. 
+        Empty list if none of the variables is a primitive, auxiliary o structure of the micro_model
+
+        Notes
+        -----
+        Interpolation may fail when too close to boundary
+        """
+        if var in self.meso_structures:
+            return interpn(self.domain_vars['Points'], self.meso_structures[var], point, method = self.interp_method)[0]
+        elif var in self.meso_vars: 
+            return interpn(self.domain_vars['Points'], self.meso_vars[var], point, method = self.interp_method)[0]
+        elif var in self.deriv_vars: 
+            return interpn(self.domain_vars['Points'], self.deriv_vars[var], point, method = self.interp_method)[0]
+        elif var in self.filter_vars:
+            return interpn(self.domain_vars['Points'], self.filter_vars[var], point, method=self.interp_method)[0]
+        else: 
+            print('Cannot interpolate value of {} using data fromfilter_vars meso_structures/meso_varsderiv_vars/filter_vars. Check!'.format(var))
+
+    @multimethod
+    def get_var_gridpoint(self, var: str, h: object, i: object, j: object, k: object):
+        """
+        Returns quantity corresponding to input str 'var' evaluated 
+        at the grid-point identified by grid indices h,i,j, k
+
+        Parameters
+        -----------
+        var: str corresponding to structure/ meso vars/ deriv vars or filter vars
+            (check init method)
+
+        h,i,j,k: int
+            integers corresponding to position on the grid. 
+
+        Returns
+        --------
+        Variable evaluated at the grid-point identified by grid indices h,i,j,k.
+
+        Notes
+        ------
+        This method is useful e.g. for plotting the raw data. 
+        """
+        if var in self.meso_structures:
+            return self.meso_structures[var][h,i,j,k]  
+        elif var in self.meso_vars:
+            return self.meso_vars[var][h,i,j,k]  
+        elif var in self.deriv_vars:
+            return self.deriv_vars[var][h,i,j,k]
+        elif var in self.filter_vars:
+            return self.filter_vars[var][h,i,j,k]
+        else: 
+            print(f'Cannot get value of {var} at h,i,j,k from data in meso_vars/meso_structures/deriv_vars/filter_vars')
+            return None
+
+    @multimethod
+    def get_var_gridpoint(self, var: str, point: object):
+        """
+        Returns variable corresponding to input 'var' at gridpoint 
+        closest to input 'point'.
+
+        Parameters:
+        -----------
+        var: str corresponding to structure/ meso vars/ deriv vars or filter vars
+            (check init method)
+
+        point: list of 3+1 floats
+
+        Returns: 
+        --------
+        Variable evaluated at the closest grid-point to input 'point'. 
+
+        Notes:
+        ------
+        This method should be used in case using interpolated values becomes 
+        too expensive. 
+        """
+        indices = Base.find_nearest_cell(point, self.domain_vars['Points'])
+        if var in self.meso_structures:
+            return self.meso_structures[var][tuple(indices)]  
+        elif var in self.meso_vars:
+            return self.meso_vars[var][tuple(indices)]   
+        elif var in self.deriv_vars:
+            return self.deriv_vars[var][tuple(indices)]
+        elif var in self.filter_vars:
+            return self.filter_vars[var][tuple(indices)]
+        else: 
+            print(f'Cannot get value of {var} at point from data in meso_vars/meso_structures/deriv_vars/filter_vars')
+            return None
+
+
+
+class minitMHD_3D(object):
+    """
+    Idea: interpret filtered data in terms of Minit-like model 
+    """
+    def __init__(self, micro_model, find_obs, filter, interp_method = 'linear'):
+        """
+        Sets up the main variables and dictionaries of the class. 
+
+        Parameters
+        -----------
+
+        micro_model: instance of a micromodel
+            the fine-scale unfiltered data
+
+        find_obs: instance of a class for finding the filtering observers (e.g. via root-finding)
+
+        filter: instance of a class for performing the filtering on the structures
+
+        interp_method: optional method for interpolation
+        """
+        self.micro_model = micro_model
+        self.find_obs = find_obs
+        self.filter = filter
+        self.spatial_dims = 3
+        self.interp_method = interp_method
+
+        self.domain_int_strs = ('Nt','Nx','Ny')
+        self.domain_float_strs = ("Tmin","Tmax","Xmin","Xmax","Ymin","Ymax","Zmin", "Zmax", "Dt","Dx","Dy","Dz")
+        self.domain_array_strs = ("T","X","Y","Z","Points")
+        self.domain_vars = dict.fromkeys(self.domain_int_strs+self.domain_float_strs+self.domain_array_strs)
+        for var in self.domain_vars: 
+            self.domain_vars[var] = []
+        
+        self.metric = np.zeros((4,4))
+        self.metric[0,0] = -1
+        self.metric[1,1] = self.metric[2,2] = self.metric[3,3] =  +1
+
+        self.filter_vars_strs = ['U', 'U_errors', 'U_success']
+        self.filter_vars = dict.fromkeys(self.filter_vars_strs)
+        for var in self.filter_vars:
+            var = []
+
+        self.meso_structures_strs  = ['SET', 'BC', 'Fab']
+        self.meso_structures = dict.fromkeys(self.meso_structures_strs) 
+        for var in self.meso_structures:
+                self.meso_structures[var] = []
+
+        # FOCUS ON THE MAGNETIC FIELD ONLY FOR NOW: COMMENTING OUT THE FLUID BITS, TO BE ADDED LATER IF NEEDED IN CALIBRATION
+        # self.meso_scalars_strs = ['eps_tilde', 'n_tilde', 'p_tilde', 'p_filt', 'eos_res', 'Pi_res', 'T_tilde']
+        # self.meso_vectors_strs = ['u_tilde', 'q_res']
+        # self.meso_r2tensors_strs = ['pi_res']
+        # self.meso_vars_strs = self.meso_scalars_strs + self.meso_vectors_strs + self.meso_r2tensors_strs
+
+        self.meso_scalars_strs = ['e_turb']
+        self.meso_r2tensors_strs = ['F_stress', 'M_stress', 'R_stress']
+
+        self.meso_vars = dict.fromkeys(self.meso_vectors_strs)
+
+        self.coefficient_strs = ["Gamma"]
+        self.coefficients = dict.fromkeys(self.coefficient_strs)
+        self.coefficients['Gamma'] = 4.0/3.0
+
+        # Dictionary with stencils and coefficients for finite differencing (this is for first derivatives)
+        self.differencing = dict.fromkeys((2, 3)) #key gives the accuracy 
+        self.differencing[2] = dict.fromkeys(['fw', 'bw', 'cen']) 
+        self.differencing[2]['fw'] = {'coefficients' : [-1, 1] , 'stencil' : [0, 1]}
+        self.differencing[2]['bw'] = {'coefficients' : [1, -1] , 'stencil' : [0, -1]}
+        self.differencing[2]['cen'] = {'coefficients' : [-1/2., 0, 1/2.] , 'stencil' : [-1, 0, 1]}
+        self.differencing[3] = dict.fromkeys(['fw', 'bw', 'cen']) 
+        self.differencing[3]['fw'] = {'coefficients' : [-3/2., 2., -1/2.] , 'stencil' : [0, 1, 2]}
+        self.differencing[3]['bw'] = {'coefficients' : [3/2., -2., 1/2.] , 'stencil' : [0, -1, -2]}
+        self.differencing[3]['cen'] = {'coefficients' : [1/12., -2/3., 0., 2/3., -1/12.] , 'stencil' : [-2, -1, 0, 1, 2]}
+
+
+        # NO DERIVATIVES ARE NEEDED IN THIS MODEL, AT LEAST NOT BEFORE COEFFICIENT CALIBRATION
+        # # dictionary with non-local quantities (keys must match one of meso_vars or structure)
+        # # self.nonlocal_vars_strs = ['u_tilde', 'T_tilde', 'n_tilde', 'eps_tilde'] 
+        # self.nonlocal_vars_strs = ['B_fol'] 
+        # Dstrs = ['D_' + i for i in self.nonlocal_vars_strs]
+        # self.deriv_vars = dict.fromkeys(Dstrs)
+
+        # Additional, closure-scheme specific vars must be added appropriately using model_residuals()
+        # self.all_var_strs = self.meso_vars_strs  + Dstrs + self.meso_structures_strs
+
+        # Run some simple compatibility test... 
+        compatible = True
+        error = ''
+        if self.spatial_dims != micro_model.get_spatial_dims(): 
+            compatible = False
+            error += '\nError: different dimensions.'
+        for struct in self.meso_structures_strs:
+            if struct not in self.micro_model.get_structures_strs():
+                compatible = False
+                error += f'\nError: {struct} not in micro_model!'
+
+        if not compatible:
+            print("Meso and Micro models are incompatible:"+error) 
+
+        self.labels_var_dict = {'SET' : r'$<T^{ab}>$', 
+                                'BC' : r'$<n^a>$',
+                                'U' : r'$U^a$',
+                                'Gamma' : r'$\Gamma$',
+                                'eos_res' : r'$M$',
+                                'Pi_res' : r'$\tilde{\Pi}$',
+                                'q_res' : r'$\tilde{q}^a$',
+                                'pi_res' : r'$\tilde{\pi}^{ab}$',
+                                'eps_tilde' : r'$\tilde{\varepsilon}$',
+                                'n_tilde' : r'$\tilde{n}$',
+                                'p_tilde' : r'$\tilde{p}$',
+                                'p_filt' : r'$<p>$',
+                                'T_tilde' : r'$\tilde{T}$',
+                                'u_tilde' : r'$\tilde{u}^a$',
+                                'D_u_tilde' : r'$\nabla_{a}\tilde{u}^b$',
+                                'D_T_tilde' : r'$\nabla_{a}\tilde{T}$',
+                                'D_n_tilde' : r'$\nabla_{a}\tilde{n}$',
+                                'D_eps_tilde' : r'$\nabla_{a}\tilde{\varepsilon}$',
+                                'n_tilde_dot' : r'$\dot{\tilde{n}}$',
+                                'T_tilde_dot' : r'$\dot{\tilde{T}}$',
+                                'sD_T_tilde': r'$D_{a}\tilde{T}$',
+                                'sD_n_tilde': r'$D_{a}\tilde{n}$',
+                                'shear_tilde' : r'$\tilde{\sigma}^{ab}$',
+                                'acc_tilde' : r'$\tilde{a}^a$',
+                                'exp_tilde' : r'$\tilde{\theta}$',
+                                'Theta_tilde' : r'$\tilde{\Theta}^a$',
+                                'eta' : r'$\eta$',
+                                'zeta' : r'$\zeta$',
+                                'kappa' : r'$\kappa$',
+                                'Pi_res_sq' : r'$\tilde{\Pi}^2$',
+                                'pi_res_sq' : r'$\tilde{\pi}_{ab}\tilde{\pi}^{ab}$',
+                                'shear_sq' : r'$\tilde{\sigma}_{ab}\tilde{\sigma}^{ab}$',
+                                'Theta_sq': r'$\tilde{\Theta}_a\tilde{\Theta}^a$',
+                                'q_res_sq': r'$\tilde{q}_a \tilde{q}^a$',
+                                'det_shear': r'$det(\sigma)$',
+                                'vort_sq' : r'$\omega_{ab}\omega^{ab}$',
+                                'acc_mag': r'$|a|$', 
+                                'sD_n_tilde_sq' : r'$D_{a}\tilde{n}D^{a}\tilde{n}$',
+                                'dot_Dn_Theta' : r'$D_{a}\tilde{n}\Theta^{a}$'}
+        
+    def update_labels_dict(self, entry_dict):
+        """
+        Add/change dictionry key/value entry for figure labels.
+        """
+        self.labels_var_dict.update(entry_dict)
+
+    def set_find_obs(self, find_obs):
+        self.find_obs = find_obs
+
+    def set_filter(self, filter):
+        self.filter = filter
+
+    def get_all_var_strs(self): 
+        return list(self.meso_vars.keys())  + list(self.meso_structures.keys()) + list(self.filter_vars.keys()) #+ list(self.deriv_vars.keys()) 
+
+    def get_gridpoints(self): 
+        return self.domain_vars['Points']
+    
+    def get_model_name(self):
+        return 'mfMHD_3D'
+    
+    def set_find_obs_method(self, find_obs):
+        self.find_obs = find_obs
+
+    def get_interpol_var(self, var, point):
+        """
+        Returns quantity corresponding to input str 'var' evaluated 
+        at the input point 'point' via interpolation. 
+
+        Parameters
+        ----------
+        var: str corresponding to structure/ meso vars/ deriv vars or filter vars
+            (check init method)
+            
+        point : list of floats
+            ordered coordinates: t,x,y,z
+
+        Return
+        ------
+        Interpolated values/arrays corresponding to variable. 
+        Empty list if none of the variables is a primitive, auxiliary o structure of the micro_model
+
+        Notes
+        -----
+        Interpolation may fail when too close to boundary
+        """
+        if var in self.meso_structures:
+            return interpn(self.domain_vars['Points'], self.meso_structures[var], point, method = self.interp_method)[0]
+        elif var in self.meso_vars: 
+            return interpn(self.domain_vars['Points'], self.meso_vars[var], point, method = self.interp_method)[0]
+        elif var in self.deriv_vars: 
+            return interpn(self.domain_vars['Points'], self.deriv_vars[var], point, method = self.interp_method)[0]
+        elif var in self.filter_vars:
+            return interpn(self.domain_vars['Points'], self.filter_vars[var], point, method=self.interp_method)[0]
+        else: 
+            print('Cannot interpolate value of {} using data fromfilter_vars meso_structures/meso_varsderiv_vars/filter_vars. Check!'.format(var))
+
+    @multimethod
+    def get_var_gridpoint(self, var: str, h: object, i: object, j: object, k: object):
+        """
+        Returns quantity corresponding to input str 'var' evaluated 
+        at the grid-point identified by grid indices h,i,j, k
+
+        Parameters
+        -----------
+        var: str corresponding to structure/ meso vars/ deriv vars or filter vars
+            (check init method)
+
+        h,i,j,k: int
+            integers corresponding to position on the grid. 
+
+        Returns
+        --------
+        Variable evaluated at the grid-point identified by grid indices h,i,j,k.
+
+        Notes
+        ------
+        This method is useful e.g. for plotting the raw data. 
+        """
+        if var in self.meso_structures:
+            return self.meso_structures[var][h,i,j,k]  
+        elif var in self.meso_vars:
+            return self.meso_vars[var][h,i,j,k]  
+        elif var in self.deriv_vars:
+            return self.deriv_vars[var][h,i,j,k]
+        elif var in self.filter_vars:
+            return self.filter_vars[var][h,i,j,k]
+        else: 
+            print(f'Cannot get value of {var} at h,i,j,k from data in meso_vars/meso_structures/deriv_vars/filter_vars')
+            return None
+
+    @multimethod
+    def get_var_gridpoint(self, var: str, point: object):
+        """
+        Returns variable corresponding to input 'var' at gridpoint 
+        closest to input 'point'.
+
+        Parameters:
+        -----------
+        var: str corresponding to structure/ meso vars/ deriv vars or filter vars
+            (check init method)
+
+        point: list of 3+1 floats
+
+        Returns: 
+        --------
+        Variable evaluated at the closest grid-point to input 'point'. 
+
+        Notes:
+        ------
+        This method should be used in case using interpolated values becomes 
+        too expensive. 
+        """
+        indices = Base.find_nearest_cell(point, self.domain_vars['Points'])
+        if var in self.meso_structures:
+            return self.meso_structures[var][tuple(indices)]  
+        elif var in self.meso_vars:
+            return self.meso_vars[var][tuple(indices)]   
+        elif var in self.deriv_vars:
+            return self.deriv_vars[var][tuple(indices)]
+        elif var in self.filter_vars:
+            return self.filter_vars[var][tuple(indices)]
+        else: 
+            print(f'Cannot get value of {var} at point from data in meso_vars/meso_structures/deriv_vars/filter_vars')
+            return None
