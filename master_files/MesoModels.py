@@ -2110,6 +2110,8 @@ class resHD_3D(object):
         ------
         Assumes the micro-slices are stored with a fixed time-gap, although possibly different from 
         the micro-grid spacing.
+
+        Here it is assumed that the meso model will always have more than one slice. 
         """
         
         # COMPATIBILITY CHECKS 
@@ -2588,7 +2590,7 @@ class mfMHD_3D(object):
         self.interp_method = interp_method
 
         self.domain_int_strs = ('Nt','Nx','Ny')
-        self.domain_float_strs = ("Tmin","Tmax","Xmin","Xmax","Ymin","Ymax","Zmin", "Zmax", "Dt","Dx","Dy","Dz")
+        self.domain_float_strs = ("Tmin","Tmax","Xmin","Xmax","Ymin","Ymax","Zmin", "Zmax", "Dt","Dx","Dy","Dz","CG")
         self.domain_array_strs = ("T","X","Y","Z","Points")
         self.domain_vars = dict.fromkeys(self.domain_int_strs+self.domain_float_strs+self.domain_array_strs)
         for var in self.domain_vars: 
@@ -2632,7 +2634,12 @@ class mfMHD_3D(object):
         self.differencing[3]['fw'] = {'coefficients' : [-3/2., 2., -1/2.] , 'stencil' : [0, 1, 2]}
         self.differencing[3]['bw'] = {'coefficients' : [3/2., -2., 1/2.] , 'stencil' : [0, -1, -2]}
         self.differencing[3]['cen'] = {'coefficients' : [1/12., -2/3., 0., 2/3., -1/12.] , 'stencil' : [-2, -1, 0, 1, 2]}
+ 
+        self.levi3D = np.array([[[ np.sign(i-j) * np.sign(j- k) * np.sign(k-i) \
+                      for k in range(3)]for j in range(3) ] for i in range(3) ])
 
+        self.levi4D = np.array([[[[ np.sign(i - j) * np.sign(j - k) * np.sign(k - l) * np.sign(i - l) \
+                       for l in range(4)] for k in range(4) ] for j in range(4)] for i in range(4)])
 
         # dictionary with non-local quantities (keys must match one of meso_vars or structure)
         # self.nonlocal_vars_strs = ['u_tilde', 'T_tilde', 'n_tilde', 'eps_tilde'] 
@@ -2914,6 +2921,7 @@ class mfMHD_3D(object):
         self.domain_vars['Nx'] = len(self.domain_vars['X'])
         self.domain_vars['Ny'] = len(self.domain_vars['Y'])
         self.domain_vars['Nz'] = len(self.domain_vars['Z'])
+        self.domain_vars["CG"] = coarse_factor
 
         # Setup arrays for structures
         Nt, Nx, Ny, Nz = self.domain_vars['Nt'], self.domain_vars['Nx'], self.domain_vars['Ny'], self.domain_vars['Nz']
@@ -2956,9 +2964,7 @@ class mfMHD_3D(object):
 
         The grid is set up so that the mesomodel central slice is aligned with that of the micromodel. 
         If the number of meso-slices is odd, then mesogrid is set up so that there's an equal number of slices beyond and 
-        before the central one. If the number of mesoslices is even (DEPRECATED) there mesogrid is set up so that there's
-        one extra slice beyond than before. 
-        CHANGE THIS TO: IF NUMSLICES IS EVEN, THIS NUMBER IS ADDED 1 
+        before the central one. IF NUMSLICES IS EVEN, THIS NUMBER IS ADDED 1 
 
         The spatial points on each mesomodel slice are aligned with (part of) those of the micromodel grid.  
         The advantage of this routine over 'setup_meso_grid' is that it does not require the micro-slices to be stored with 
@@ -3065,6 +3071,8 @@ class mfMHD_3D(object):
         else:
             self.domain_vars['Dt'] = 0.
 
+        self.domain_vars['CG'] = coarse_factor
+
         # INITIALIZE THE MESO VARS TO EMPTY ARRAYS
         # Setup arrays for structures
         Nt, Nx, Ny, Nz = self.domain_vars['Nt'], self.domain_vars['Nx'], self.domain_vars['Ny'], self.domain_vars['Nz']
@@ -3098,7 +3106,6 @@ class mfMHD_3D(object):
         # self.deriv_vars['D_n_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
         self.deriv_vars['D_B_fol'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
         return None
-
 
     def find_observers_parallel(self, n_cpus):
         """
@@ -3213,6 +3220,155 @@ class mfMHD_3D(object):
             # self.meso_structures['SET'][point_indxs_meso_grid] = filtered_vars['SET'][i]
             self.meso_vars['Fab'][point_indxs_meso_grid] = filtered_vars['Fab'][i]
 
+    def compute_fluctuations_task(self, BCmicro, Fabmicro, U, Fab, h, i, j, k):
+        """
+        Given the micro BC and reference meso velocity (filtering or Favre observers) compute the fluctuations. 
+        Given the micro and filtered Fab compute the fluctuations. 
+        Project vel fluctuations wrt to foliation and compute magnetic field fluctuations wrt foliations.
+        Take cross product and compute electromotive force.
+
+        Parameters
+        ----------
+        BCmicro: np.array((4,))
+
+        Fabmicro:np.array((4,4))
+
+        U: np.array((4,))
+
+        Fab: np.array((4,4))
+
+        h, i, j, k: integers
+
+
+        Returns
+        -------
+        (h,i,j,k), eps_emf
+        """
+        metric = np.zeros((4,4))
+        metric[0,0] = -1.
+        metric[1,1] = metric[2,2] = metric[3,3] = 1.
+
+        # Computing the velocity fluctuations: u - U, project wrt foliation, restrict to vector living on the slice
+        u_micro = 1. / np.sqrt(-Base.Mink_dot(BCmicro, BCmicro))
+        u_micro = np.multiply(u_micro, BCmicro)
+        delta_u = u_micro - U
+        Na = np.array([1,0,0,0])
+        fol_proj = metric + np.outer(Na, Na)
+        fol_proj = np.einsum('ik,jl,kl->ij', metric, metric, fol_proj)
+        delta_u = np.einsum('ij,j', fol_proj, delta_u)
+        if delta_u[0] != 0 : 
+            print('Error: the projection in the velocity fluctuations did not work')
+        delta_u = delta_u[1:]
+
+        # Computing the magnetic fluctuations: Fab - <Fab>, compute B wrt to foliation, restrict to vector living on the slice
+        delta_B = Fabmicro - Fab
+        delta_B = np.multiply(-1/2, np.einsum('ijkl,j,kl->ij', self.levi4D, Na, delta_B))
+        if delta_B[0] != 0 : 
+            print('Error: the projection in the magnetic fluctuations did not work')
+        delta_B = delta_B[1:]
+
+        eps_emf = np.einsum('ijk,j,k->i', self.levi3D, delta_u, delta_B)
+
+        return (h, i, j, k), eps_emf
+
+    def compute_fluctuations_parallel(self, ncpus):
+        """
+        Compute the fluctuations required for interpreting the mesomodel in terms of 
+        a mean field model: electromotive force. 
+
+        Wrapper that executes self.compute_fluctuations_task in parallel
+
+        Parameters
+        ----------
+        ncpus: int
+            number of processors to use
+
+        Returns
+        -------
+        micro_eps_emf --> ready to be filtered
+        """
+        # Finding the min and max indices in the mesogrid
+        Xmin = self.domain_vars['Xmin']
+        Ymin = self.domain_vars['Ymin']
+        Zmin = self.domain_vars['Zmin']
+        Tmin = self.domain_vars['Tmin']
+
+        Xmax = self.domain_vars['Xmax']
+        Ymax = self.domain_vars['Ymax']
+        Zmax = self.domain_vars['Zmax']
+        Tmax = self.domain_vars['Tmax']
+
+        hmin, imin, jmin, kmin = Base.find_nearest_cell(Xmin, Ymin, Zmin, Tmin, self.micro_model.domain_vars['points'])
+        hmax, imax, jmax, kmax = Base.find_nearest_cell(Xmax, Ymax, Zmax, Tmax, self.micro_model.domain_vars['points'])
+
+        Hmin, Imin, Jmin, Kmin = Base.find_nearest_cell(Xmin, Ymin, Zmin, Tmin, self.domain_vars['Points'])
+        Hmax, Imax, Jmax, Kmax = Base.find_nearest_cell(Xmax, Ymax, Zmax, Tmax, self.domain_vars['Points'])
+
+        # Preparing arguments for pool 
+        args_for_pool=[]
+        for h in range(hmin, hmax, 1):
+            for i in range(imin, imax, 1):
+                for j in range(jmin, jmax, 1):
+                    for k in range(kmin, kmax, 1):
+                        BCmicro = self.meso_structures['BC'][h,i,j,k]
+                        Fabmicro = self.micro_model.meso_structures['Fab'][h,i,j,k]
+
+                        hh = np.arange(Hmin, Hmax+1,1)[h]
+                        ii = np.arange(Imin, Imax+1,1)[i]
+                        jj = np.arange(Jmin, Jmax+1,1)[j]
+                        kk = np.arange(Kmin, Kmax+1,1)[k]
+
+                        U = self.filter_vars['U'][hh,ii,jj,kk]
+                        # Use the following if you want velocity fluctuations to be defined wrt to Favre observer 
+                        # U = self.meso_structures['BC'][hh,ii,jj,kk]
+                        # U = np.multiply(-Base.Mink_dot(U, U), U) 
+                        Fab = self.meso_structures['Fab'][hh,ii,jj,kk]
+
+                        args_for_pool.append((BCmicro, Fabmicro, U, Fab, h, i, j, k))
+
+        # initialize the fluctuations array to zero, then copy in the results of task
+        micro_Eps_emf = np.zeros((hmax-hmin, imax-imin, jmax-jmin, kmax-kmin, self.spatial_dims))
+
+        with mp.Pool(processes=ncpus) as pool:
+            print('Computing fluctuations in parallel with {} processes'.format(pool._processes), flush=True)
+            for result in pool.starmap(mfMHD_3D.compute_fluctuations_task, args_for_pool):
+                h,i,j,k = result[0]
+                micro_Eps_emf[h,i,j,k,:] = result[1]
+
+        return micro_Eps_emf
+        
+    def filter_fluctuations_task():
+        """
+        """
+        pass
+
+    def filter_fluctuations_parallel():
+        """
+        """
+        pass
+    
+    def decompose_structures_task():
+        """
+        Here you want to get filtered B_fol 
+        """
+        pass
+
+    def decompose_structures_parallel():
+        """
+        """
+        pass
+
+    def compute_derivatives_gridpoint():
+        """
+        Here you want to take curl filtered B_fol: effective resistivity term (beta)
+        """
+        pass
+
+    def compute_derivatives():
+        """
+        """
+        pass
+
 class minitMHD_3D(object):
     """
     Idea: interpret filtered data in terms of Minit-like model 
@@ -3240,7 +3396,7 @@ class minitMHD_3D(object):
         self.interp_method = interp_method
 
         self.domain_int_strs = ('Nt','Nx','Ny')
-        self.domain_float_strs = ("Tmin","Tmax","Xmin","Xmax","Ymin","Ymax","Zmin", "Zmax", "Dt","Dx","Dy","Dz")
+        self.domain_float_strs = ("Tmin","Tmax","Xmin","Xmax","Ymin","Ymax","Zmin", "Zmax", "Dt","Dx","Dy","Dz","CG")
         self.domain_array_strs = ("T","X","Y","Z","Points")
         self.domain_vars = dict.fromkeys(self.domain_int_strs+self.domain_float_strs+self.domain_array_strs)
         for var in self.domain_vars: 
@@ -3287,6 +3443,13 @@ class minitMHD_3D(object):
         self.differencing[3]['fw'] = {'coefficients' : [-3/2., 2., -1/2.] , 'stencil' : [0, 1, 2]}
         self.differencing[3]['bw'] = {'coefficients' : [3/2., -2., 1/2.] , 'stencil' : [0, -1, -2]}
         self.differencing[3]['cen'] = {'coefficients' : [1/12., -2/3., 0., 2/3., -1/12.] , 'stencil' : [-2, -1, 0, 1, 2]}
+
+
+        self.levi3D = np.array([[[ np.sign(i-j) * np.sign(j- k) * np.sign(k-i) \
+                      for k in range(3)]for j in range(3) ] for i in range(3) ])
+
+        self.levi4D = np.array([[[[ np.sign(i - j) * np.sign(j - k) * np.sign(k - l) * np.sign(i - l) \
+                       for l in range(4)] for k in range(4) ] for j in range(4)] for i in range(4)])
 
 
         # NO DERIVATIVES ARE NEEDED IN THIS MODEL, AT LEAST NOT BEFORE COEFFICIENT CALIBRATION
@@ -3479,7 +3642,6 @@ class minitMHD_3D(object):
             print(f'Cannot get value of {var} at point from data in meso_vars/meso_structures/deriv_vars/filter_vars')
             return None
         
-
     def setup_meso_grid(self, patch_bdrs, coarse_factor = 1, coarse_time = True): 
         """
         Builds the meso_model grid using the micro_model grid points within the input 
@@ -3570,6 +3732,7 @@ class minitMHD_3D(object):
         self.domain_vars['Nx'] = len(self.domain_vars['X'])
         self.domain_vars['Ny'] = len(self.domain_vars['Y'])
         self.domain_vars['Nz'] = len(self.domain_vars['Z'])
+        self.domain_vars["CG"] = coarse_factor
 
         # Setup arrays for structures
         Nt, Nx, Ny, Nz = self.domain_vars['Nt'], self.domain_vars['Nx'], self.domain_vars['Ny'], self.domain_vars['Nz']
@@ -3602,7 +3765,6 @@ class minitMHD_3D(object):
         # self.deriv_vars['D_eps_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
         # self.deriv_vars['D_n_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
 
-
     def setup_mesogrid_smart(self, num_T_slices, spatial_bdrs, coarse_factor):
         """
         Set-up the meso-grid as follows: 
@@ -3613,8 +3775,7 @@ class minitMHD_3D(object):
         The grid is set up so that the mesomodel central slice is aligned with that of the micromodel. 
         If the number of meso-slices is odd, then mesogrid is set up so that there's an equal number of slices beyond and 
         before the central one. If the number of mesoslices is even (DEPRECATED) there mesogrid is set up so that there's
-        one extra slice beyond than before. 
-        CHANGE THIS TO: IF NUMSLICES IS EVEN, THIS NUMBER IS ADDED 1 
+        one extra slice beyond than before. IF NUMSLICES IS EVEN, THIS NUMBER IS ADDED 1, ALSO OK WITH SINGLE MESO-SLICE.
 
         The spatial points on each mesomodel slice are aligned with (part of) those of the micromodel grid.  
         The advantage of this routine over 'setup_meso_grid' is that it does not require the micro-slices to be stored with 
@@ -3721,6 +3882,8 @@ class minitMHD_3D(object):
         else:
             self.domain_vars['Dt'] = 0.
 
+        self.domain_vars["CG"] = coarse_factor
+
         # INITIALIZE THE MESO VARS TO EMPTY ARRAYS
         # Setup arrays for structures
         Nt, Nx, Ny, Nz = self.domain_vars['Nt'], self.domain_vars['Nx'], self.domain_vars['Ny'], self.domain_vars['Nz']
@@ -3755,7 +3918,6 @@ class minitMHD_3D(object):
         # self.deriv_vars['D_B_fol'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
         return None
     
-
     def find_observers_parallel(self, n_cpus):
         """
         Method to find observers at all points on meso-grid, parallelized version. 
@@ -3869,5 +4031,148 @@ class minitMHD_3D(object):
             # self.meso_structures['SET'][point_indxs_meso_grid] = filtered_vars['SET'][i]
             self.meso_vars['Fab'][point_indxs_meso_grid] = filtered_vars['Fab'][i]
 
+    def compute_fluctuations_task(self, BCmicro, Fabmicro, U, Fab, h, i, j, k):
+        """
+        Given the micro BC and reference meso velocity (filtering or Favre observers) compute the fluctuations. 
+        Given the micro and filtered Fab compute the fluctuations. 
+        Project vel fluctuations wrt to foliation and compute magnetic field fluctuations wrt foliations.
+        Take cross product and compute electromotive force.
 
+        Parameters
+        ----------
+        BCmicro: np.array((4,))
+
+        Fabmicro:np.array((4,4))
+
+        U: np.array((4,))
+
+        Fab: np.array((4,4))
+
+        h, i, j, k: integers
+
+
+        Returns
+        -------
+        (h,i,j,k), eps_emf
+        """
+        metric = np.zeros((4,4))
+        metric[0,0] = -1.
+        metric[1,1] = metric[2,2] = metric[3,3] = 1.
+
+        # Computing the velocity fluctuations: u - U, project wrt foliation, restrict to vector living on the slice
+        u_micro = 1. / np.sqrt(-Base.Mink_dot(BCmicro, BCmicro))
+        u_micro = np.multiply(u_micro, BCmicro)
+        delta_u = u_micro - U
+        Na = np.array([1,0,0,0])
+        fol_proj = metric + np.outer(Na, Na)
+        fol_proj = np.einsum('ik,jl,kl->ij', metric, metric, fol_proj)
+        delta_u = np.einsum('ij,j', fol_proj, delta_u)
+        if delta_u[0] != 0 : 
+            print('Error: the projection in the velocity fluctuations did not work')
+        delta_u = delta_u[1:]
+
+        # Computing the magnetic fluctuations: Fab - <Fab>, compute B wrt to foliation, restrict to vector living on the slice
+        delta_B = Fabmicro - Fab
+        delta_B = np.multiply(-1/2, np.einsum('ijkl,j,kl->ij', self.levi4D, Na, delta_B))
+        if delta_B[0] != 0 : 
+            print('Error: the projection in the magnetic fluctuations did not work')
+        delta_B = delta_B[1:]
+
+        micro_reynolds = np.outer(delta_u, delta_u)
+        micro_maxwell = np.outer(delta_B, delta_B)
+        micro_faraday = np.outer(delta_u, delta_B) - np.outer(delta_B, delta_u)
+
+        return (h, i, j, k), micro_reynolds, micro_maxwell, micro_faraday
+
+    def compute_fluctuations_parallel(self, ncpus):
+        """
+        Compute the fluctuations required for interpreting the mesomodel in terms of 
+        a Minit: micro_faraday, micro_maxwell, micro_reynolds.
+
+        Wrapper that executes self.compute_fluctuations_task in parallel
+
+        Parameters
+        ----------
+        ncpus: int
+            number of processors to use
+
+        Returns
+        -------
+        micro_faraday, micro_maxwell, micro_reynolds --> ready to be filtered
+        """
+        # Finding the min and max indices in the mesogrid
+        Xmin = self.domain_vars['Xmin']
+        Ymin = self.domain_vars['Ymin']
+        Zmin = self.domain_vars['Zmin']
+        Tmin = self.domain_vars['Tmin']
+
+        Xmax = self.domain_vars['Xmax']
+        Ymax = self.domain_vars['Ymax']
+        Zmax = self.domain_vars['Zmax']
+        Tmax = self.domain_vars['Tmax']
+
+        hmin, imin, jmin, kmin = Base.find_nearest_cell(Xmin, Ymin, Zmin, Tmin, self.micro_model.domain_vars['points'])
+        hmax, imax, jmax, kmax = Base.find_nearest_cell(Xmax, Ymax, Zmax, Tmax, self.micro_model.domain_vars['points'])
+
+        Hmin, Imin, Jmin, Kmin = Base.find_nearest_cell(Xmin, Ymin, Zmin, Tmin, self.domain_vars['Points'])
+        Hmax, Imax, Jmax, Kmax = Base.find_nearest_cell(Xmax, Ymax, Zmax, Tmax, self.domain_vars['Points'])
+
+        # Preparing arguments for pool 
+        args_for_pool=[]
+        for h in range(hmin, hmax+1, 1):
+            for i in range(imin, imax+1, 1):
+                for j in range(jmin, jmax+1, 1):
+                    for k in range(kmin, kmax+1, 1):
+
+                        BCmicro = self.meso_structures['BC'][h,i,j,k]
+                        Fabmicro = self.micro_model.meso_structures['Fab'][h,i,j,k]
+
+                        hh = np.arange(Hmin, Hmax+1,1)[h]
+                        ii = np.arange(Imin, Imax+1,1)[i]
+                        jj = np.arange(Jmin, Jmax+1,1)[j]
+                        kk = np.arange(Kmin, Kmax+1,1)[k]
+
+                        U = self.filter_vars['U'][hh,ii,jj,kk]
+                        # Use the following if you want velocity fluctuations to be defined wrt to Favre observer 
+                        # U = self.meso_structures['BC'][hh,ii,jj,kk]
+                        # U = np.multiply(-Base.Mink_dot(U, U), U) 
+                        Fab = self.meso_structures['Fab'][hh,ii,jj,kk]
+
+                        args_for_pool.append((BCmicro, Fabmicro, U, Fab, h, i, j, k))
+
+        # initialize the fluctuations array to zero, then copy in the results of task
+        micro_faraday = np.zeros((hmax-hmin, imax-imin, jmax-jmin, kmax-kmin, self.spatial_dims, self.spatial_dims))
+        micro_maxwell = np.zeros((hmax-hmin, imax-imin, jmax-jmin, kmax-kmin, self.spatial_dims, self.spatial_dims))
+        micro_reynolds = np.zeros((hmax-hmin, imax-imin, jmax-jmin, kmax-kmin, self.spatial_dims, self.spatial_dims))
+
+        with mp.Pool(processes=ncpus) as pool:
+            print('Computing fluctuations in parallel with {} processes'.format(pool._processes), flush=True)
+            for result in pool.starmap(mfMHD_3D.compute_fluctuations_task, args_for_pool):
+                h,i,j,k = result[0]
+                micro_reynolds[h,i,j,k,:,:] = result[1]
+                micro_maxwell[h,i,j,k,:,:] = result[2]
+                micro_faraday[h,i,j,k,:,:] = result[3]
+
+        return micro_faraday, micro_maxwell, micro_reynolds
+
+
+    def filter_fluctuations_task():
+        """
+        """
+        pass
+
+    def filter_fluctuations_parallel():
+        """
+        """
+        pass
     
+    def decompose_structures_task():
+        """
+        Here you want to compute e_turb. 
+        """
+        pass
+
+    def decompose_structures_parallel():
+        """
+        """
+        pass
