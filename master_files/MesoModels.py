@@ -2088,8 +2088,8 @@ class resHD_3D(object):
 
         The grid is set up so that the mesomodel central slice is aligned with that of the micromodel. 
         If the number of meso-slices is odd, then mesogrid is set up so that there's an equal number of slices beyond and 
-        before the central one. If the number of mesoslices is even (DEPRECATED) there mesogrid is set up so that there's
-        one extra slice beyond than before. 
+        before the central one. If the number of mesoslices is even (DEPRECATED) the num is increased by one to have an 
+        odd total number of meso-slices (good for derivatives)
 
         The spatial points on each mesomodel slice are aligned with (part of) those of the micromodel grid.  
         The advantage of this routine over 'setup_meso_grid' is that it does not require the micro-slices to be stored with 
@@ -2117,16 +2117,11 @@ class resHD_3D(object):
         central_t_idx = int((nt-1)/2)
         central_t = self.micro_model.domain_vars['t'][central_t_idx]
 
-        if num_T_slices % 2: # odd number of meso slices 
-            T_max = central_t + (num_T_slices/2) * self.micro_model.domain_vars['dx'] * coarse_factor
-            T_min = central_t - (num_T_slices/2) * self.micro_model.domain_vars['dx'] * coarse_factor
+        if not(num_T_slices % 2): # even number of meso slices 
+            num_T_slices = num_T_slices + 1
 
-        else: # even number of meso slices
-            n_T_max = int(num_T_slices/2)
-            n_T_min = int((num_T_slices-1)/2)
-
-            T_max = central_t + n_T_max * self.micro_model.domain_vars['dx'] * coarse_factor
-            T_min = central_t - n_T_min * self.micro_model.domain_vars['dx'] * coarse_factor
+        T_max = central_t + (num_T_slices/2) * self.micro_model.domain_vars['dx'] * coarse_factor
+        T_min = central_t - (num_T_slices/2) * self.micro_model.domain_vars['dx'] * coarse_factor
 
         patch_bdrs = [[T_min, T_max]]
         for elem in spatial_bdrs: 
@@ -2152,24 +2147,13 @@ class resHD_3D(object):
         idx_mins = Base.find_nearest_cell(spatial_patch_min, micro_spatial_pts)
         idx_maxs = Base.find_nearest_cell(spatial_patch_max, micro_spatial_pts)
 
-        if num_T_slices % 2: # odd number of meso slices
-            halfnum_T_slices = int(num_T_slices/2)
-            for h in range(halfnum_T_slices+1): 
-                T = central_t + h * self.micro_model.domain_vars['dx'] * coarse_factor
-                self.domain_vars['T'].append(T)
-            for h in range(1, halfnum_T_slices+1):
-                T = central_t - h * self.micro_model.domain_vars['dx'] * coarse_factor
-                self.domain_vars['T'].append(T)
-
-        else: #even number of meso slices
-            T = central_t
+        halfnum_T_slices = int(num_T_slices/2)
+        for h in range(halfnum_T_slices+1): 
+            T = central_t + h * self.micro_model.domain_vars['dx'] * coarse_factor
             self.domain_vars['T'].append(T)
-            for h in range(n_T_max):
-                T = central_t + (h+1) * self.micro_model.domain_vars['dx'] * coarse_factor   
-                self.domain_vars['T'].append(T)
-            for h in range(n_T_min):
-                T = central_t - (h+1) * self.micro_model.domain_vars['dx'] * coarse_factor   
-                self.domain_vars['T'].append(T)
+        for h in range(1, halfnum_T_slices+1):
+            T = central_t - h * self.micro_model.domain_vars['dx'] * coarse_factor
+            self.domain_vars['T'].append(T)
             
         self.domain_vars['T'] = np.sort(np.array(self.domain_vars['T']))
 
@@ -2619,6 +2603,7 @@ class mfMHD_3D(object):
         for var in self.filter_vars:
             var = []
 
+        # structures are built with rank: (2,0), (1,0), (2,0)
         self.meso_structures_strs  = ['SET', 'BC', 'Fab']
         self.meso_structures = dict.fromkeys(self.meso_structures_strs) 
         for var in self.meso_structures:
@@ -2839,7 +2824,280 @@ class mfMHD_3D(object):
             print(f'Cannot get value of {var} at point from data in meso_vars/meso_structures/deriv_vars/filter_vars')
             return None
 
+    def setup_meso_grid(self, patch_bdrs, coarse_factor = 1, coarse_time = True): 
+        """
+        Builds the meso_model grid using the micro_model grid points within the input 
+        patch (defined via 'patch_bdrs'). The method allows for coarse graining the grid 
+        (spacial directions only or also in time)
+        Then store the info about the meso grid and set up arrays of definite rank and size 
+        for the quantities needed later. 
 
+        Parameters
+        -----------
+        patch_bdrs: list of lists of two floats, 
+            [[tmin, tmax],[xmin,xmax],[ymin,ymax],[zmin,zmax]]
+
+        coarse_factor: integer   
+
+        coarse_time: boolean
+            If true, coarsening is also applied to the time direction.
+        
+        Notes
+        ------
+        If the patch_bdrs are larger than micro_grid, the method will not set-up the meso_grid, 
+        and an error message is printed. This is extra safety measure!
+        """
+
+        # Is the patch within the micro_model domain? 
+        conditions = patch_bdrs[0][0] < self.micro_model.domain_vars['tmin'] or \
+                    patch_bdrs[0][1] > self.micro_model.domain_vars['tmax'] or \
+                    patch_bdrs[1][0] < self.micro_model.domain_vars['xmin'] or \
+                    patch_bdrs[1][1] > self.micro_model.domain_vars['xmax'] or \
+                    patch_bdrs[2][0] < self.micro_model.domain_vars['ymin'] or \
+                    patch_bdrs[2][1] > self.micro_model.domain_vars['ymax'] or \
+                    patch_bdrs[3][0] < self.micro_model.domain_vars['zmin'] or \
+                    patch_bdrs[3][1] > self.micro_model.domain_vars['zmax']
+        
+        if conditions: 
+            print('Error: the input region for filtering is larger than micro_model domain!')
+            return None 
+
+        #Find the nearest cell to input patch bdrs
+        patch_min = [patch_bdrs[0][0], patch_bdrs[1][0], patch_bdrs[2][0], patch_bdrs[3][0]]
+        patch_max = [patch_bdrs[0][1], patch_bdrs[1][1], patch_bdrs[2][1], patch_bdrs[3][1]]
+        idx_mins = Base.find_nearest_cell(patch_min, self.micro_model.domain_vars['points'])
+        idx_maxs = Base.find_nearest_cell(patch_max, self.micro_model.domain_vars['points'])
+
+        # Set meso_grid spacings
+        if coarse_time:
+            self.domain_vars['Dt'] = self.micro_model.domain_vars['dt'] * coarse_factor
+        else:
+            self.domain_vars['Dt'] = self.micro_model.domain_vars['dt']
+        
+        self.domain_vars['Dx'] = self.micro_model.domain_vars['dx'] * coarse_factor
+        self.domain_vars['Dy'] = self.micro_model.domain_vars['dy'] * coarse_factor
+        self.domain_vars['Dz'] = self.micro_model.domain_vars['dz'] * coarse_factor
+
+        # Building the meso_grid
+        h, i, j, k = idx_mins[0], idx_mins[1], idx_mins[2], idx_mins[3]
+        while h <= idx_maxs[0]:
+            t = self.micro_model.domain_vars['t'][h]
+            self.domain_vars['T'].append(t)
+            if coarse_time:
+                h += coarse_factor
+            else:
+                h += 1
+        while i <= idx_maxs[1]:
+            x = self.micro_model.domain_vars['x'][i]
+            self.domain_vars['X'].append(x)
+            i += coarse_factor
+        while j <= idx_maxs[2]:
+            y = self.micro_model.domain_vars['y'][j]
+            self.domain_vars['Y'].append(y)
+            j += coarse_factor
+        while k <= idx_maxs[3]:
+            z = self.micro_model.domain_vars['z'][k]
+            self.domain_vars['Z'].append(z)
+            k += coarse_factor
+                
+        # Saving the info about the meso_grid
+        self.domain_vars['Points'] = [self.domain_vars['T'], self.domain_vars['X'], self.domain_vars['Y'], self.domain_vars['Z']]
+        self.domain_vars['Tmin'] = np.amin(self.domain_vars['T'])
+        self.domain_vars['Xmin'] = np.amin(self.domain_vars['X'])
+        self.domain_vars['Ymin'] = np.amin(self.domain_vars['Y'])
+        self.domain_vars['Zmin'] = np.amin(self.domain_vars['Z'])
+        self.domain_vars['Tmax'] = np.amax(self.domain_vars['T'])
+        self.domain_vars['Xmax'] = np.amax(self.domain_vars['X'])
+        self.domain_vars['Ymax'] = np.amax(self.domain_vars['Y'])
+        self.domain_vars['Zmax'] = np.amax(self.domain_vars['Z'])
+        self.domain_vars['Nt'] = len(self.domain_vars['T'])
+        self.domain_vars['Nx'] = len(self.domain_vars['X'])
+        self.domain_vars['Ny'] = len(self.domain_vars['Y'])
+        self.domain_vars['Nz'] = len(self.domain_vars['Z'])
+
+        # Setup arrays for structures
+        Nt, Nx, Ny, Nz = self.domain_vars['Nt'], self.domain_vars['Nx'], self.domain_vars['Ny'], self.domain_vars['Nz']
+        self.meso_structures['BC'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        self.meso_structures['SET'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+        self.meso_structures['Fab'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+
+        # Setup arrays for meso_vars 
+        # for str in self.meso_scalars_strs:
+        #     self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz))
+        for str in self.meso_vectors_strs:
+            self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        # for str in self.meso_r2tensors_strs: 
+        #     self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+
+        # Setup arrays for filter_vars
+        self.filter_vars['U'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        self.filter_vars['U_errors'] = np.zeros((Nt, Nx, Ny, Nz))
+        self.filter_vars['U_success'] = dict()
+
+        for h in range(Nt):
+            for i in range(Nx):
+                for j in range(Ny):
+                    for k in range(Nz):
+                        self.filter_vars['U_success'].update({(h,i,j,k): False})
+
+        # Setup arrays for derivatives of the model. 
+        # self.deriv_vars['D_u_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+        # self.deriv_vars['D_T_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        # self.deriv_vars['D_eps_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        # self.deriv_vars['D_n_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        self.deriv_vars['D_B_fol'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+
+    def setup_mesogrid_smart(self, num_T_slices, spatial_bdrs, coarse_factor):
+        """
+        Set-up the meso-grid as follows: 
+            spatial boundaries as provided by 'spatial_bdrs'
+            the mesh in the meso-model is coarser than micro one by a factor 'coarse_factor'
+            the mesomodel mesh contains 'num_T_slices' foliation slices
+
+        The grid is set up so that the mesomodel central slice is aligned with that of the micromodel. 
+        If the number of meso-slices is odd, then mesogrid is set up so that there's an equal number of slices beyond and 
+        before the central one. If the number of mesoslices is even (DEPRECATED) there mesogrid is set up so that there's
+        one extra slice beyond than before. 
+        CHANGE THIS TO: IF NUMSLICES IS EVEN, THIS NUMBER IS ADDED 1 
+
+        The spatial points on each mesomodel slice are aligned with (part of) those of the micromodel grid.  
+        The advantage of this routine over 'setup_meso_grid' is that it does not require the micro-slices to be stored with 
+        a time-gap equal to the grid-spacing. This allows to store less snapshots from a turbulence simulation.
+
+        Parameters
+        -----------
+        num_T_slices: int   
+            number of slices in the mesomodel mesh. The code won't crash, but this should be an odd number.
+
+        spatial_bdrs: list of lists of floats
+            [[x_min, x_max], [y_min, y_max], [z_min, z_max]]
+        
+        coarse_factor: int
+            the grid spacing ratio between mesomodel and micromodel, should be consistent with filter width.     
+
+        Notes
+        ------
+        Assumes the micro-slices are stored with a fixed time-gap, although possibly different from 
+        the micro-grid spacing.
+        """
+        
+        # COMPATIBILITY CHECKS 
+        nt = len(self.micro_model.domain_vars['t'])
+        central_t_idx = int((nt-1)/2)
+        central_t = self.micro_model.domain_vars['t'][central_t_idx]
+
+        if not( num_T_slices % 2): # even number of meso slices 
+            num_T_slices = num_T_slices + 1
+
+        T_max = central_t + (num_T_slices/2) * self.micro_model.domain_vars['dx'] * coarse_factor
+        T_min = central_t - (num_T_slices/2) * self.micro_model.domain_vars['dx'] * coarse_factor
+
+        patch_bdrs = [[T_min, T_max]]
+        for elem in spatial_bdrs: 
+            patch_bdrs.append(elem)
+
+        conditions = patch_bdrs[0][0] < self.micro_model.domain_vars['tmin'] or \
+                    patch_bdrs[0][1] > self.micro_model.domain_vars['tmax'] or \
+                    patch_bdrs[1][0] < self.micro_model.domain_vars['xmin'] or \
+                    patch_bdrs[1][1] > self.micro_model.domain_vars['xmax'] or \
+                    patch_bdrs[2][0] < self.micro_model.domain_vars['ymin'] or \
+                    patch_bdrs[2][1] > self.micro_model.domain_vars['ymax'] or \
+                    patch_bdrs[3][0] < self.micro_model.domain_vars['zmin'] or \
+                    patch_bdrs[3][1] > self.micro_model.domain_vars['zmax']
+        
+        if conditions: 
+            print('Error: the boundaries of the meso-grid are larger than micro-model domain!')
+            return None 
+        
+        # SETTING UP THE GRID
+        micro_spatial_pts = [self.micro_model.domain_vars['x'], self.micro_model.domain_vars['y'], self.micro_model.domain_vars['z']]
+        spatial_patch_min = [patch_bdrs[1][0], patch_bdrs[2][0], patch_bdrs[3][0]]
+        spatial_patch_max = [patch_bdrs[1][1], patch_bdrs[2][1], patch_bdrs[3][1]]
+        idx_mins = Base.find_nearest_cell(spatial_patch_min, micro_spatial_pts)
+        idx_maxs = Base.find_nearest_cell(spatial_patch_max, micro_spatial_pts)
+
+        halfnum_T_slices = int(num_T_slices/2)
+        for h in range(halfnum_T_slices+1): 
+            T = central_t + h * self.micro_model.domain_vars['dx'] * coarse_factor
+            self.domain_vars['T'].append(T)
+        for h in range(1, halfnum_T_slices+1):
+            T = central_t - h * self.micro_model.domain_vars['dx'] * coarse_factor
+            self.domain_vars['T'].append(T)
+            
+        self.domain_vars['T'] = np.sort(np.array(self.domain_vars['T']))
+
+        i,j,k = idx_mins[0], idx_mins[1], idx_mins[2]
+        while i <= idx_maxs[0]:
+            x = self.micro_model.domain_vars['x'][i]
+            self.domain_vars['X'].append(x)
+            i += coarse_factor
+
+        while j <= idx_maxs[1]:
+            y = self.micro_model.domain_vars['y'][j]
+            self.domain_vars['Y'].append(y)
+            j += coarse_factor
+
+        while k <= idx_maxs[2]:
+            z = self.micro_model.domain_vars['z'][k]
+            self.domain_vars['Z'].append(z)
+            k += coarse_factor
+
+        # Saving the info about the meso_grid
+        self.domain_vars['Points'] = [self.domain_vars['T'], self.domain_vars['X'], self.domain_vars['Y'], self.domain_vars['Z']]
+        self.domain_vars['Tmin'] = np.amin(self.domain_vars['T'])
+        self.domain_vars['Xmin'] = np.amin(self.domain_vars['X'])
+        self.domain_vars['Ymin'] = np.amin(self.domain_vars['Y'])
+        self.domain_vars['Zmin'] = np.amin(self.domain_vars['Z'])
+        self.domain_vars['Tmax'] = np.amax(self.domain_vars['T'])
+        self.domain_vars['Xmax'] = np.amax(self.domain_vars['X'])
+        self.domain_vars['Ymax'] = np.amax(self.domain_vars['Y'])
+        self.domain_vars['Zmax'] = np.amax(self.domain_vars['Z'])
+        self.domain_vars['Nt'] = len(self.domain_vars['T'])
+        self.domain_vars['Nx'] = len(self.domain_vars['X'])
+        self.domain_vars['Ny'] = len(self.domain_vars['Y'])
+        self.domain_vars['Nz'] = len(self.domain_vars['Z'])
+              
+        self.domain_vars['Dx'] = self.micro_model.domain_vars['dx'] * coarse_factor
+        self.domain_vars['Dy'] = self.micro_model.domain_vars['dy'] * coarse_factor
+        self.domain_vars['Dz'] = self.micro_model.domain_vars['dz'] * coarse_factor
+        if num_T_slices > 1: 
+            self.domain_vars['Dt'] = self.micro_model.domain_vars['dx'] * coarse_factor  
+        else:
+            self.domain_vars['Dt'] = 0.
+
+        # INITIALIZE THE MESO VARS TO EMPTY ARRAYS
+        # Setup arrays for structures
+        Nt, Nx, Ny, Nz = self.domain_vars['Nt'], self.domain_vars['Nx'], self.domain_vars['Ny'], self.domain_vars['Nz']
+        self.meso_structures['BC'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        self.meso_structures['SET'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+        self.meso_structures['Fab'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+
+        # Setup arrays for meso_vars 
+        # for str in self.meso_scalars_strs:
+        #     self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz))
+        for str in self.meso_vectors_strs:
+            self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        # for str in self.meso_r2tensors_strs: 
+        #     self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+
+        # Setup arrays for filter_vars
+        self.filter_vars['U'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        self.filter_vars['U_errors'] = np.zeros((Nt, Nx, Ny, Nz))
+        self.filter_vars['U_success'] = dict()
+
+        for h in range(Nt):
+            for i in range(Nx):
+                for j in range(Ny):
+                    for k in range(Nz):
+                        self.filter_vars['U_success'].update({(h,i,j,k): False})
+
+        # Setup arrays for derivatives of the model. 
+        # self.deriv_vars['D_u_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+        # self.deriv_vars['D_T_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        # self.deriv_vars['D_eps_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        # self.deriv_vars['D_n_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        self.deriv_vars['D_B_fol'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+        return None
 
 class minitMHD_3D(object):
     """
@@ -2883,6 +3141,7 @@ class minitMHD_3D(object):
         for var in self.filter_vars:
             var = []
 
+        # structures are built with rank: (2,0), (1,0), (2,0)
         self.meso_structures_strs  = ['SET', 'BC', 'Fab']
         self.meso_structures = dict.fromkeys(self.meso_structures_strs) 
         for var in self.meso_structures:
@@ -2894,6 +3153,7 @@ class minitMHD_3D(object):
         # self.meso_r2tensors_strs = ['pi_res']
         # self.meso_vars_strs = self.meso_scalars_strs + self.meso_vectors_strs + self.meso_r2tensors_strs
 
+        # r2tensors are built with rank: (2,0), (2,0), (2,0)
         self.meso_scalars_strs = ['e_turb']
         self.meso_r2tensors_strs = ['F_stress', 'M_stress', 'R_stress']
 
@@ -3104,3 +3364,279 @@ class minitMHD_3D(object):
         else: 
             print(f'Cannot get value of {var} at point from data in meso_vars/meso_structures/deriv_vars/filter_vars')
             return None
+        
+
+    def setup_meso_grid(self, patch_bdrs, coarse_factor = 1, coarse_time = True): 
+        """
+        Builds the meso_model grid using the micro_model grid points within the input 
+        patch (defined via 'patch_bdrs'). The method allows for coarse graining the grid 
+        (spacial directions only or also in time)
+        Then store the info about the meso grid and set up arrays of definite rank and size 
+        for the quantities needed later. 
+
+        Parameters
+        -----------
+        patch_bdrs: list of lists of two floats, 
+            [[tmin, tmax],[xmin,xmax],[ymin,ymax],[zmin,zmax]]
+
+        coarse_factor: integer   
+
+        coarse_time: boolean
+            If true, coarsening is also applied to the time direction.
+        
+        Notes
+        ------
+        If the patch_bdrs are larger than micro_grid, the method will not set-up the meso_grid, 
+        and an error message is printed. This is extra safety measure!
+        """
+
+        # Is the patch within the micro_model domain? 
+        conditions = patch_bdrs[0][0] < self.micro_model.domain_vars['tmin'] or \
+                    patch_bdrs[0][1] > self.micro_model.domain_vars['tmax'] or \
+                    patch_bdrs[1][0] < self.micro_model.domain_vars['xmin'] or \
+                    patch_bdrs[1][1] > self.micro_model.domain_vars['xmax'] or \
+                    patch_bdrs[2][0] < self.micro_model.domain_vars['ymin'] or \
+                    patch_bdrs[2][1] > self.micro_model.domain_vars['ymax'] or \
+                    patch_bdrs[3][0] < self.micro_model.domain_vars['zmin'] or \
+                    patch_bdrs[3][1] > self.micro_model.domain_vars['zmax']
+        
+        if conditions: 
+            print('Error: the input region for filtering is larger than micro_model domain!')
+            return None 
+
+        #Find the nearest cell to input patch bdrs
+        patch_min = [patch_bdrs[0][0], patch_bdrs[1][0], patch_bdrs[2][0], patch_bdrs[3][0]]
+        patch_max = [patch_bdrs[0][1], patch_bdrs[1][1], patch_bdrs[2][1], patch_bdrs[3][1]]
+        idx_mins = Base.find_nearest_cell(patch_min, self.micro_model.domain_vars['points'])
+        idx_maxs = Base.find_nearest_cell(patch_max, self.micro_model.domain_vars['points'])
+
+        # Set meso_grid spacings
+        if coarse_time:
+            self.domain_vars['Dt'] = self.micro_model.domain_vars['dt'] * coarse_factor
+        else:
+            self.domain_vars['Dt'] = self.micro_model.domain_vars['dt']
+        
+        self.domain_vars['Dx'] = self.micro_model.domain_vars['dx'] * coarse_factor
+        self.domain_vars['Dy'] = self.micro_model.domain_vars['dy'] * coarse_factor
+        self.domain_vars['Dz'] = self.micro_model.domain_vars['dz'] * coarse_factor
+
+        # Building the meso_grid
+        h, i, j, k = idx_mins[0], idx_mins[1], idx_mins[2], idx_mins[3]
+        while h <= idx_maxs[0]:
+            t = self.micro_model.domain_vars['t'][h]
+            self.domain_vars['T'].append(t)
+            if coarse_time:
+                h += coarse_factor
+            else:
+                h += 1
+        while i <= idx_maxs[1]:
+            x = self.micro_model.domain_vars['x'][i]
+            self.domain_vars['X'].append(x)
+            i += coarse_factor
+        while j <= idx_maxs[2]:
+            y = self.micro_model.domain_vars['y'][j]
+            self.domain_vars['Y'].append(y)
+            j += coarse_factor
+        while k <= idx_maxs[3]:
+            z = self.micro_model.domain_vars['z'][k]
+            self.domain_vars['Z'].append(z)
+            k += coarse_factor
+                
+        # Saving the info about the meso_grid
+        self.domain_vars['Points'] = [self.domain_vars['T'], self.domain_vars['X'], self.domain_vars['Y'], self.domain_vars['Z']]
+        self.domain_vars['Tmin'] = np.amin(self.domain_vars['T'])
+        self.domain_vars['Xmin'] = np.amin(self.domain_vars['X'])
+        self.domain_vars['Ymin'] = np.amin(self.domain_vars['Y'])
+        self.domain_vars['Zmin'] = np.amin(self.domain_vars['Z'])
+        self.domain_vars['Tmax'] = np.amax(self.domain_vars['T'])
+        self.domain_vars['Xmax'] = np.amax(self.domain_vars['X'])
+        self.domain_vars['Ymax'] = np.amax(self.domain_vars['Y'])
+        self.domain_vars['Zmax'] = np.amax(self.domain_vars['Z'])
+        self.domain_vars['Nt'] = len(self.domain_vars['T'])
+        self.domain_vars['Nx'] = len(self.domain_vars['X'])
+        self.domain_vars['Ny'] = len(self.domain_vars['Y'])
+        self.domain_vars['Nz'] = len(self.domain_vars['Z'])
+
+        # Setup arrays for structures
+        Nt, Nx, Ny, Nz = self.domain_vars['Nt'], self.domain_vars['Nx'], self.domain_vars['Ny'], self.domain_vars['Nz']
+        self.meso_structures['BC'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        self.meso_structures['SET'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+        self.meso_structures['Fab'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+
+        # Setup arrays for meso_vars 
+        for str in self.meso_scalars_strs:
+            self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz))
+        # for str in self.meso_vectors_strs:
+        #     self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        for str in self.meso_r2tensors_strs: 
+            self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+
+        # Setup arrays for filter_vars
+        self.filter_vars['U'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        self.filter_vars['U_errors'] = np.zeros((Nt, Nx, Ny, Nz))
+        self.filter_vars['U_success'] = dict()
+
+        for h in range(Nt):
+            for i in range(Nx):
+                for j in range(Ny):
+                    for k in range(Nz):
+                        self.filter_vars['U_success'].update({(h,i,j,k): False})
+
+        # Setup arrays for derivatives of the model. 
+        # self.deriv_vars['D_u_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+        # self.deriv_vars['D_T_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        # self.deriv_vars['D_eps_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        # self.deriv_vars['D_n_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+
+
+    def setup_mesogrid_smart(self, num_T_slices, spatial_bdrs, coarse_factor):
+        """
+        Set-up the meso-grid as follows: 
+            spatial boundaries as provided by 'spatial_bdrs'
+            the mesh in the meso-model is coarser than micro one by a factor 'coarse_factor'
+            the mesomodel mesh contains 'num_T_slices' foliation slices
+
+        The grid is set up so that the mesomodel central slice is aligned with that of the micromodel. 
+        If the number of meso-slices is odd, then mesogrid is set up so that there's an equal number of slices beyond and 
+        before the central one. If the number of mesoslices is even (DEPRECATED) there mesogrid is set up so that there's
+        one extra slice beyond than before. 
+        CHANGE THIS TO: IF NUMSLICES IS EVEN, THIS NUMBER IS ADDED 1 
+
+        The spatial points on each mesomodel slice are aligned with (part of) those of the micromodel grid.  
+        The advantage of this routine over 'setup_meso_grid' is that it does not require the micro-slices to be stored with 
+        a time-gap equal to the grid-spacing. This allows to store less snapshots from a turbulence simulation.
+
+        Parameters
+        -----------
+        num_T_slices: int   
+            number of slices in the mesomodel mesh. The code won't crash, but this should be an odd number.
+
+        spatial_bdrs: list of lists of floats
+            [[x_min, x_max], [y_min, y_max], [z_min, z_max]]
+        
+        coarse_factor: int
+            the grid spacing ratio between mesomodel and micromodel, should be consistent with filter width.     
+
+        Notes
+        ------
+        Assumes the micro-slices are stored with a fixed time-gap, although possibly different from 
+        the micro-grid spacing.
+        """
+        
+        # COMPATIBILITY CHECKS 
+        nt = len(self.micro_model.domain_vars['t'])
+        central_t_idx = int((nt-1)/2)
+        central_t = self.micro_model.domain_vars['t'][central_t_idx]
+
+        if not( num_T_slices % 2): # even number of meso slices 
+            num_T_slices = num_T_slices + 1
+
+        T_max = central_t + (num_T_slices/2) * self.micro_model.domain_vars['dx'] * coarse_factor
+        T_min = central_t - (num_T_slices/2) * self.micro_model.domain_vars['dx'] * coarse_factor
+
+        patch_bdrs = [[T_min, T_max]]
+        for elem in spatial_bdrs: 
+            patch_bdrs.append(elem)
+
+        conditions = patch_bdrs[0][0] < self.micro_model.domain_vars['tmin'] or \
+                    patch_bdrs[0][1] > self.micro_model.domain_vars['tmax'] or \
+                    patch_bdrs[1][0] < self.micro_model.domain_vars['xmin'] or \
+                    patch_bdrs[1][1] > self.micro_model.domain_vars['xmax'] or \
+                    patch_bdrs[2][0] < self.micro_model.domain_vars['ymin'] or \
+                    patch_bdrs[2][1] > self.micro_model.domain_vars['ymax'] or \
+                    patch_bdrs[3][0] < self.micro_model.domain_vars['zmin'] or \
+                    patch_bdrs[3][1] > self.micro_model.domain_vars['zmax']
+        
+        if conditions: 
+            print('Error: the boundaries of the meso-grid are larger than micro-model domain!')
+            return None 
+        
+        # SETTING UP THE GRID
+        micro_spatial_pts = [self.micro_model.domain_vars['x'], self.micro_model.domain_vars['y'], self.micro_model.domain_vars['z']]
+        spatial_patch_min = [patch_bdrs[1][0], patch_bdrs[2][0], patch_bdrs[3][0]]
+        spatial_patch_max = [patch_bdrs[1][1], patch_bdrs[2][1], patch_bdrs[3][1]]
+        idx_mins = Base.find_nearest_cell(spatial_patch_min, micro_spatial_pts)
+        idx_maxs = Base.find_nearest_cell(spatial_patch_max, micro_spatial_pts)
+
+        halfnum_T_slices = int(num_T_slices/2)
+        for h in range(halfnum_T_slices+1): 
+            T = central_t + h * self.micro_model.domain_vars['dx'] * coarse_factor
+            self.domain_vars['T'].append(T)
+        for h in range(1, halfnum_T_slices+1):
+            T = central_t - h * self.micro_model.domain_vars['dx'] * coarse_factor
+            self.domain_vars['T'].append(T)
+            
+        self.domain_vars['T'] = np.sort(np.array(self.domain_vars['T']))
+
+        i,j,k = idx_mins[0], idx_mins[1], idx_mins[2]
+        while i <= idx_maxs[0]:
+            x = self.micro_model.domain_vars['x'][i]
+            self.domain_vars['X'].append(x)
+            i += coarse_factor
+
+        while j <= idx_maxs[1]:
+            y = self.micro_model.domain_vars['y'][j]
+            self.domain_vars['Y'].append(y)
+            j += coarse_factor
+
+        while k <= idx_maxs[2]:
+            z = self.micro_model.domain_vars['z'][k]
+            self.domain_vars['Z'].append(z)
+            k += coarse_factor
+
+        # Saving the info about the meso_grid
+        self.domain_vars['Points'] = [self.domain_vars['T'], self.domain_vars['X'], self.domain_vars['Y'], self.domain_vars['Z']]
+        self.domain_vars['Tmin'] = np.amin(self.domain_vars['T'])
+        self.domain_vars['Xmin'] = np.amin(self.domain_vars['X'])
+        self.domain_vars['Ymin'] = np.amin(self.domain_vars['Y'])
+        self.domain_vars['Zmin'] = np.amin(self.domain_vars['Z'])
+        self.domain_vars['Tmax'] = np.amax(self.domain_vars['T'])
+        self.domain_vars['Xmax'] = np.amax(self.domain_vars['X'])
+        self.domain_vars['Ymax'] = np.amax(self.domain_vars['Y'])
+        self.domain_vars['Zmax'] = np.amax(self.domain_vars['Z'])
+        self.domain_vars['Nt'] = len(self.domain_vars['T'])
+        self.domain_vars['Nx'] = len(self.domain_vars['X'])
+        self.domain_vars['Ny'] = len(self.domain_vars['Y'])
+        self.domain_vars['Nz'] = len(self.domain_vars['Z'])
+              
+        self.domain_vars['Dx'] = self.micro_model.domain_vars['dx'] * coarse_factor
+        self.domain_vars['Dy'] = self.micro_model.domain_vars['dy'] * coarse_factor
+        self.domain_vars['Dz'] = self.micro_model.domain_vars['dz'] * coarse_factor
+        if num_T_slices > 1: 
+            self.domain_vars['Dt'] = self.micro_model.domain_vars['dx'] * coarse_factor  
+        else:
+            self.domain_vars['Dt'] = 0.
+
+        # INITIALIZE THE MESO VARS TO EMPTY ARRAYS
+        # Setup arrays for structures
+        Nt, Nx, Ny, Nz = self.domain_vars['Nt'], self.domain_vars['Nx'], self.domain_vars['Ny'], self.domain_vars['Nz']
+        self.meso_structures['BC'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        self.meso_structures['SET'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+        self.meso_structures['Fab'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+
+        # Setup arrays for meso_vars 
+        for str in self.meso_scalars_strs:
+            self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz))
+        # for str in self.meso_vectors_strs:
+        #     self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        for str in self.meso_r2tensors_strs: 
+            self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+
+        # Setup arrays for filter_vars
+        self.filter_vars['U'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        self.filter_vars['U_errors'] = np.zeros((Nt, Nx, Ny, Nz))
+        self.filter_vars['U_success'] = dict()
+
+        for h in range(Nt):
+            for i in range(Nx):
+                for j in range(Ny):
+                    for k in range(Nz):
+                        self.filter_vars['U_success'].update({(h,i,j,k): False})
+
+        # Setup arrays for derivatives of the model. 
+        # self.deriv_vars['D_u_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+        # self.deriv_vars['D_T_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        # self.deriv_vars['D_eps_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        # self.deriv_vars['D_n_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+        # self.deriv_vars['D_B_fol'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+        return None
