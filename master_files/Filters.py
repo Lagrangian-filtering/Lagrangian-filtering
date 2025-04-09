@@ -1339,6 +1339,9 @@ class box_filter_parallel(object):
     Streamlined parallel version of spatial_box_filter
     Currently: based on gauss-quadrature with order 3 
                Micro_model quantities are interpolated.
+
+    TRY: avoid passing micro_model upon construction. This should have an impact on memory usage. 
+    Simply pass to 'filter_var_parallel' the actual var instead of reading it from internal micromodel instance. 
     """
     def __init__(self, micro_model, filter_width):
         """
