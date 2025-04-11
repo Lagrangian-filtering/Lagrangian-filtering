@@ -2,7 +2,7 @@
 """
 Created on Mon Mar 27 18:53:53 2023
 
-@authors: Marcus & Thomas
+@authors: Thomas & Marcus 
 """
 
 import numpy as np
@@ -3346,15 +3346,54 @@ class mfMHD_3D(object):
 
         return micro_Eps_emf
         
-    def filter_fluctuations_task():
+    def filter_fluctuations_parallel(self, ncpus):
         """
-        """
-        pass
+        Using the self.filter class to filter the microfluctuations. 
 
-    def filter_fluctuations_parallel():
+        Parameters
+        ----------
+        ncpus: int
+            number of processors to use
+
         """
-        """
-        pass
+        ts = self.domain_vars['T']
+        xs = self.domain_vars['X']
+        ys = self.domain_vars['Y']
+        zs = self.domain_vars['Z']
+
+        t_idxs = np.arange(len(ts))
+        x_idxs = np.arange(len(xs))
+        y_idxs = np.arange(len(ys))
+        z_idxs = np.arange(len(zs))
+
+        points = []
+        for elem in product(ts,xs,ys,zs):
+            points.append(list(elem))
+
+        indices_meso_grid = []
+        for elem in product(t_idxs, x_idxs, y_idxs, z_idxs):
+            indices_meso_grid.append(elem)
+
+        observers = []
+        for elem in product(t_idxs, x_idxs, y_idxs, z_idxs):
+            if self.filter_vars['U_success'][elem]:
+                observers.append(self.filter_vars['U'][elem])
+            else:
+                print('Observers are not computed on (parts of) the grid!')
+                return None
+
+        points_observers = []
+        for i in range(len(points)):
+            points_observers.append([points[i], observers[i]])
+
+        micro_grid = self.micro_model.domain_vars['points']
+        micro_var = self.compute_fluctuations_parallel(ncpus)
+        positions, filtered_var = self.filter.filter_var_parallel(micro_grid, micro_var, 'micro_Eps_emf', points_observers, ncpus)
+
+        for i in range(len(positions)):
+            point_indxs_meso_grid = indices_meso_grid[positions[i]]
+            self.meso_vars['Eps_emf'][point_indxs_meso_grid] = filtered_var[i]
+
     
     def decompose_structures_task():
         """
@@ -3908,7 +3947,7 @@ class minitMHD_3D(object):
         # for str in self.meso_vectors_strs:
         #     self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
         for str in self.meso_r2tensors_strs: 
-            self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+            self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims, self.spatial_dims))
 
         # Setup arrays for filter_vars
         self.filter_vars['U'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
@@ -4173,16 +4212,60 @@ class minitMHD_3D(object):
 
         return micro_faraday, micro_maxwell, micro_reynolds
 
+    def filter_fluctuations_parallel(self, ncpus):
+        """
+        Using the self.filter class to filter the microfluctuations. 
 
-    def filter_fluctuations_task():
+        Parameters
+        ----------
+        ncpus: int
+            number of processors to use
         """
-        """
-        pass
+        ts = self.domain_vars['T']
+        xs = self.domain_vars['X']
+        ys = self.domain_vars['Y']
+        zs = self.domain_vars['Z']
 
-    def filter_fluctuations_parallel():
-        """
-        """
-        pass
+        t_idxs = np.arange(len(ts))
+        x_idxs = np.arange(len(xs))
+        y_idxs = np.arange(len(ys))
+        z_idxs = np.arange(len(zs))
+
+        points = []
+        for elem in product(ts,xs,ys,zs):
+            points.append(list(elem))
+
+        indices_meso_grid = []
+        for elem in product(t_idxs, x_idxs, y_idxs, z_idxs):
+            indices_meso_grid.append(elem)
+
+        observers = []
+        for elem in product(t_idxs, x_idxs, y_idxs, z_idxs):
+            if self.filter_vars['U_success'][elem]:
+                observers.append(self.filter_vars['U'][elem])
+            else:
+                print('Observers are not computed on (parts of) the grid!')
+                return None
+
+        points_observers = []
+        for i in range(len(points)):
+            points_observers.append([points[i], observers[i]])
+
+        micro_grid = self.micro_model.domain_vars['points']
+
+        var_strs = ['micro_F_stress', 'micro_M_stress', 'micro_R_stress']
+        micro_vars = self.compute_fluctuations_parallel(ncpus)
+        
+        filtered_vars = dict.fromkeys(var_strs)
+
+        for var, var_str in zip(micro_vars, var_strs):
+            positions, filtered_vars[var_str] = self.filter.filter_var_parallel(micro_grid, micro_var, var_str, points_observers, ncpus)
+
+        for i in range(len(positions)):
+            point_indxs_meso_grid = indices_meso_grid[positions[i]]
+            self.meso_vars['F_stress'][point_indxs_meso_grid] = filtered_vars['micro_F_stress'][i]
+            self.meso_vars['M_stress'][point_indxs_meso_grid] = filtered_vars['micro_M_stress'][i]
+            self.meso_vars['R_stress'][point_indxs_meso_grid] = filtered_vars['micro_R_stress'][i]
     
     def decompose_structures_task():
         """

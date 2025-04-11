@@ -2,7 +2,7 @@
 """
 Created on Tue Mar 28 15:36:01 2023
 
-@authors: Marcus & Thomas
+@authors: Thomas & Marcus
 """
 
 import numpy as np
@@ -18,6 +18,7 @@ from system.BaseFunctionality import *
 from MicroModels import *
 from FileReaders import *
 from system.BaseFunctionality import *
+
 
 class FindObs_flux_min(object): 
     """
