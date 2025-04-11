@@ -2578,8 +2578,10 @@ class mfMHD_3D(object):
             the fine-scale unfiltered data
 
         find_obs: instance of a class for finding the filtering observers (e.g. via root-finding)
+            HERE WE ASSUME THE CLASS DOES NOT HAVE ACCESS TO MICROMODEL, e.g. smart_FindObs_root_parallel
 
         filter: instance of a class for performing the filtering on the structures
+                HERE WE ASSUME THE FILTERING CLASS DOES NOT HAVE ACCESS TO MICROMODEL, e.g. smart_box_filter_parallel
 
         interp_method: optional method for interpolation
         """
@@ -3145,7 +3147,10 @@ class mfMHD_3D(object):
         for elem in product(t_idxs, x_idxs, y_idxs, z_idxs):
             indices_meso_grid.append(elem)
 
-        successes, failures = self.find_obs.find_observers_parallel(points, n_cpus)
+
+        micro_grid = self.micro_model.domain_vars['points']
+        micro_BC = self.micro_model.structures['BC']
+        successes, failures = self.find_obs.find_observers_parallel(micro_grid, micro_BC, points, n_cpus)
 
         for i in range(len(successes[0])):
             point_indxs_meso_grid = indices_meso_grid[successes[0][i]]
@@ -3205,14 +3210,18 @@ class mfMHD_3D(object):
                 print('Observers are not computed on (parts of) the grid!')
                 return None
 
-        vars = ['BC', 'SET', 'Fab']
+        # vars = ['BC', 'SET', 'Fab']
+        vars = ['BC', 'Fab']
         points_observers = []
         for i in range(len(points)):
             points_observers.append([points[i], observers[i]])
+
+        micro_grid = self.micro_model.domain_vars['points']
             
         filtered_vars = dict.fromkeys(vars)
         for var in vars:
-            positions, filtered_vars[var] = self.filter.filter_var_parallel(points_observers, var, n_cpus)
+            micro_var = self.micro_model.vars[var]
+            positions, filtered_vars[var] = self.filter.filter_var_parallel(micro_grid, micro_var, var, points_observers, n_cpus)
 
         for i in range(len(positions)):
             point_indxs_meso_grid = indices_meso_grid[positions[i]]
@@ -3384,8 +3393,10 @@ class minitMHD_3D(object):
             the fine-scale unfiltered data
 
         find_obs: instance of a class for finding the filtering observers (e.g. via root-finding)
+            HERE WE ASSUME THE CLASS DOES NOT HAVE ACCESS TO MICROMODEL, e.g. smart_FindObs_root_parallel
 
         filter: instance of a class for performing the filtering on the structures
+                HERE WE ASSUME THE FILTERING CLASS DOES NOT HAVE ACCESS TO MICROMODEL, e.g. smart_box_filter_parallel
 
         interp_method: optional method for interpolation
         """
