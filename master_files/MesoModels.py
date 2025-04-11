@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import scipy.stats as scst    
 from scipy.linalg import det
+from time import perf_counter
 
 
 from system.BaseFunctionality import *
@@ -29,6 +30,21 @@ levi3D = np.array([[[ np.sign(i-j) * np.sign(j- k) * np.sign(k-i) \
 
 levi4D = np.array([[[[ np.sign(i - j) * np.sign(j - k) * np.sign(k - l) * np.sign(i - l) \
                        for l in range(4)] for k in range(4) ] for j in range(4)] for i in range(4)])
+
+
+def timer_decorator(func): 
+    """
+    Timing function decorator. 
+
+    Print to output the time taken to execute the function. 
+    """
+    def wrap_func(*args, **kwargs): 
+        t1 = perf_counter() 
+        result = func(*args, **kwargs) 
+        t2 = perf_counter() 
+        print(f'Function {func.__name__!r} executed in {(t2-t1):.4f}s') 
+        return result 
+    return wrap_func 
 
 
 class resHD2D(object):
@@ -2408,7 +2424,7 @@ class resHD_3D(object):
         s = np.einsum('ij,ji->', s_ab, metric)
         s_ab_tracefree = s_ab - np.multiply(s/spatial_dims, metric + np.einsum('i,j->ij', u_t, u_t)) 
 
-        p_t = resHD2D.p_Gamma_law(eps_t, n_t, 4.0/3.0) 
+        p_t = resHD_3D.p_Gamma_law(eps_t, n_t, 4.0/3.0) 
         Pi_res = s - p_t
         EOS_res = p_filt - p_t
         T_t = p_t/n_t #This must be changed if the EoS is not a Gamma_law
@@ -2619,7 +2635,7 @@ class mfMHD_3D(object):
         # self.meso_r2tensors_strs = ['pi_res']
         # self.meso_vars_strs = self.meso_scalars_strs + self.meso_vectors_strs + self.meso_r2tensors_strs
 
-        self.meso_vectors_strs = ['B_fol', 'Eps_emf']
+        self.meso_vectors_strs = ['B_fol', 'Eps_emf', 'curl_B_fol']
         self.meso_vars = dict.fromkeys(self.meso_vectors_strs)
 
         self.coefficient_strs = ["Gamma"]
@@ -3086,7 +3102,8 @@ class mfMHD_3D(object):
         # for str in self.meso_scalars_strs:
         #     self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz))
         for str in self.meso_vectors_strs:
-            self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+            # self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
+            self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims))
         # for str in self.meso_r2tensors_strs: 
         #     self.meso_vars[str] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
 
@@ -3106,7 +3123,7 @@ class mfMHD_3D(object):
         # self.deriv_vars['D_T_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
         # self.deriv_vars['D_eps_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
         # self.deriv_vars['D_n_tilde'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1))
-        self.deriv_vars['D_B_fol'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims+1, self.spatial_dims+1))
+        self.deriv_vars['D_B_fol'] = np.zeros((Nt, Nx, Ny, Nz, self.spatial_dims, self.spatial_dims))
         return None
 
     def find_observers_parallel(self, n_cpus):
@@ -3229,7 +3246,8 @@ class mfMHD_3D(object):
             # self.meso_structures['SET'][point_indxs_meso_grid] = filtered_vars['SET'][i]
             self.meso_vars['Fab'][point_indxs_meso_grid] = filtered_vars['Fab'][i]
 
-    def compute_fluctuations_task(self, BCmicro, Fabmicro, U, Fab, h, i, j, k):
+    @staticmethod
+    def compute_fluctuations_task(BCmicro, Fabmicro, U, Fab, h, i, j, k):
         """
         Given the micro BC and reference meso velocity (filtering or Favre observers) compute the fluctuations. 
         Given the micro and filtered Fab compute the fluctuations. 
@@ -3319,7 +3337,7 @@ class mfMHD_3D(object):
             for i in range(imin, imax, 1):
                 for j in range(jmin, jmax, 1):
                     for k in range(kmin, kmax, 1):
-                        BCmicro = self.meso_structures['BC'][h,i,j,k]
+                        BCmicro = self.micro_model.meso_structures['BC'][h,i,j,k]
                         Fabmicro = self.micro_model.meso_structures['Fab'][h,i,j,k]
 
                         hh = np.arange(Hmin, Hmax+1,1)[h]
@@ -3394,28 +3412,227 @@ class mfMHD_3D(object):
             point_indxs_meso_grid = indices_meso_grid[positions[i]]
             self.meso_vars['Eps_emf'][point_indxs_meso_grid] = filtered_var[i]
 
+    @staticmethod
+    def decompose_structures_task(Fab, h, i, j, k):
+        """
+        Task to be executed in parallel: computing the foliation B from filtered Fab
+
+        Parameters: 
+        -----------
+
+        Fab: np.array (4,4)
+            the Faraday tensor, rank (2,0)
+
+        h,i,j,k: integers
+            indices of the corresponding gridpoint on meso-grid
+        
+        Returns: 
+        --------
+        (list, list):
+            first list contains the decomposition of structures at point
+            second list contains indices of point on mesogrid
+        """
+        # metric = np.zeros((4,4))
+        # metric[0,0] = -1.
+        # metric[1,1] = metric[2,2] = metric[3,3] = 1.
+        # spatial_dims = 3. 
+
+        levi3D = np.array([[[ np.sign(i-j) * np.sign(j- k) * np.sign(k-i) \
+                      for k in range(3)]for j in range(3) ] for i in range(3) ])
+
+        levi4D = np.array([[[[ np.sign(i - j) * np.sign(j - k) * np.sign(k - l) * np.sign(i - l) \
+                       for l in range(4)] for k in range(4) ] for j in range(4)] for i in range(4)])
+
+        Na = np.array([1,0,0,0])
+
+        Ba_fol = -1./2. * np.einsum('ijkl,j,kl', levi4D, Na, Fab)
+
+        if Ba_fol[0] != 0:
+            print('B_fol not orthogonal to foliation!')
+
+        Ba_fol = Ba_fol[1:]
+
+        return [Ba_fol], [h,i,j,k]
+
+    def decompose_structures_parallel(self, n_cpus):
+        """
+        Routine to decompose structures on the entire grid in 
+        parallel: execute decompose_structures_task() in parallel
+
+        Parameters:
+        -----------
+        n_cpus: int
+            numbers of processes for parallelization
+        """
+        # Preparing arguments for pool 
+        args_for_pool=[]
+        for h in range(len(self.domain_vars['T'])):
+            for i in range(len(self.domain_vars['X'])):
+                for j in range(len(self.domain_vars['Y'])):
+                    for k in range(len(self.domain_vars['Z'])):
+                        # BC = self.meso_structures['BC'][h,i,j,k]
+                        # SET = self.meso_structures['SET'][h,i,j,k]
+                        # p_filt = self.meso_vars['p_filt'][h,i,j,k]
+                        # args_for_pool.append((BC, SET, p_filt, h,i,j,k))
+                        Fab = self.meso_structures['Fab'][h,i,j,k]
+                        args_for_pool.append((Fab, h,i,j,k))
+
+        with mp.Pool(processes=n_cpus) as pool:
+            print('Decomposing structures in parallel with {} processes'.format(pool._processes), flush=True)
+            for result in pool.starmap(resHD_3D.decompose_structures_task, args_for_pool):
+                h,i,j,k = result[1]
+                # self.meso_vars['n_tilde'][h,i,j,k] = result[0][0]
+                # self.meso_vars['u_tilde'][h,i,j,k,:] = result[0][1]
+                # self.meso_vars['eps_tilde'][h,i,j,k] = result[0][2]
+                # self.meso_vars['q_res'][h,i,j,k,:] = result[0][3]
+                # self.meso_vars['pi_res'][h,i,j,k,:,:] = result[0][4]
+                # self.meso_vars['p_tilde'][h,i,j,k] =  result[0][5]
+                # self.meso_vars['Pi_res'][h,i,j,k] = result[0][6]
+                # self.meso_vars['eos_res'][h,i,j,k] = result[0][7] #If EoS is not modelled you should adjust this!
+                # self.meso_vars['T_tilde'][h,i,j,k] = result[0][8] 
+                self.meso_vars['B_fol'][h,i,j,k] = result[0][1] 
+
+    def calculate_derivatives_gridpoint(self, nonlocal_var_str, h, i, j, k, direction, order = 2): 
+        """
+        Calculate partial derivative in the input 'direction' of the variable corresponding to 'nonlocal_var_str' 
+        at the position on the grid identified by indices h,i,j. The order of the differencing scheme 
+        can also be specified, default to 1.
+
+        Parameters: 
+        -----------
+        nonlocal_var_str: string
+            quantity to be taken derivate of, must be in self.nonlocal_vars_strs()
+
+        h, i, j, k: integers
+            indices for point on the meso_grid
+
+        direction: integer < self.spatial_dim + 1
+            0 for time, 1,2,3 for x,y,z
+
+        order: integer, defatult to 2
+            accuracy of the differencing scheme            
+
+        Returns: 
+        --------
+        Finite-differenced quantity at (h,i,j,k) 
+                
+        Notes:
+        ------
+        The method returns the value instead of storing it, so that these can be 
+        rearranged as preferred later, that is in calculate_derivatives() 
+        """
+        
+        if direction > self.spatial_dims: 
+            print('Directions are numbered from 0 up to {}'.format(self.spatial_dims))
+            return None
+        
+        if order not in self.differencing.keys(): 
+            print('Order passed not implemented: continuing with 2nd.')
+            order = 2
+
+        # Forward, backward or centered differencing? 
+        pos = [h,i,j,k][direction]
+        N = len(self.domain_vars['Points'][direction])
+
+        if pos in [l for l in range(order-1)]:
+            coefficients = self.differencing[order]['fw']['coefficients']
+            stencil = self.differencing[order]['fw']['stencil']
+        elif pos in [N-1-l for l in range(order-1)]:
+            coefficients = self.differencing[order]['bw']['coefficients']
+            stencil = self.differencing[order]['bw']['stencil']
+        else:
+            coefficients = self.differencing[order]['cen']['coefficients']
+            stencil = self.differencing[order]['cen']['stencil']
+
+        increment = [self.domain_vars['Dt'], self.domain_vars['Dx'], self.domain_vars['Dy'], self.domain_vars['Dz']][direction]
+        temp = 0 
+
+        for s, sample in enumerate(stencil): 
+            idxs = [h,i,j,k]
+            idxs[direction] += sample 
+            prefactor = coefficients[s] / increment
+            temp += np.multiply( prefactor, self.get_var_gridpoint(nonlocal_var_str, *idxs))
+        return temp
     
-    def decompose_structures_task():
+    def calculate_derivatives(self, slices = None, order = 2):
         """
-        Here you want to get filtered B_fol 
-        """
-        pass
+        Compute all the derivatives of the quantities corresponding to nonlocal_vars_strs, for all
+        gridpoints on the meso-grid. 
 
-    def decompose_structures_parallel():
-        """
-        """
-        pass
+        Parameters
+        ----------
+        slices: list, default to None
+            the indices corresponding to the time-slices over which you want to compute the derivatives
+            the default is the central one only. If a subset is used, the slices were derivatives are not
+            computed are deleted from the array (for memory)
 
-    def compute_derivatives_gridpoint():
-        """
-        Here you want to take curl filtered B_fol: effective resistivity term (beta)
-        """
-        pass
+        order: int
+            the order of accuracy of the finite difference approx for derivatives
 
-    def compute_derivatives():
+        Notes
+        ------
+        The derived quantities are stored as 'tensors' as follows: 
+            1st three indices refer to the position on the grid 
+
+            4th index refers to the directionality of the derivative 
+
+            last indices (1 or 2) correspond to the components of the quantity to be derived 
+
+        The index corresponding to the derivative is covariant, i.e. down. 
+        
+        Example:
+
+            Fab [h,i,j,k,a,b] : h,i,j,k grid; a,b, spacetime components
+
+            D_Fab[h,i,j,k,c,a,b]: h,i,j,k grid; c direction of derivative; a,b as for Fab
+
         """
+        if slices == None:
+            Nt = self.domain_vars['Nt']
+            slices = [int(Nt/2)]
+
+        not_slices = [i for i in range(len(self.domain_vars['T']))]
+        for elem in slices:
+            not_slices.remove(elem)
+        
+        for h in slices: 
+            t = self.domain_vars['T'][h]
+            for i, x in enumerate(self.domain_vars['X']):
+                for j, y in enumerate(self.domain_vars['Y']): 
+                    for k, z in enumerate(self.domain_vars['Z']):
+                        point = [t,y,x,z]
+                        if self.filter_vars['U_success'][h,i,j,k]:
+                            #only spatial derivatives wrt foliation: needed for curl of B. 
+                            for dir in range(self.spatial_dims): 
+                                for str in self.nonlocal_vars_strs: 
+                                    dstr = 'D_' + str 
+                                    self.deriv_vars[dstr][h,i,j,k,dir] = self.calculate_derivatives_gridpoint(str, h, i, j, k, dir+1, order=order) 
+                        else: 
+                            print('Derivatives not calculated at {}: observer could not be found.'.format(point)) 
+
+
+        # if derivatives are calculated on subset of mesoslices: then remove the slices that are not relevant (filled with zeros otherwise)
+        if len(not_slices) !=1:
+            for str in self.nonlocal_vars_strs: 
+                dstr = 'D_' + str
+                self.deriv_vars[dstr] = np.delete(self.deriv_vars[dstr], not_slices, axis=0)
+
+    # check if significant speed up with parallelization, though not sure. 
+    def compute_curl(self):
         """
-        pass
+        Here loop over grid and take curl filtered B_fol: effective resistivity term (beta)
+        """
+        self.meso_vars['curl_B_fol']
+
+        for t, h in enumerate(self.domain_vars['T']): 
+            for i, x in enumerate(self.domain_vars['X']):
+                for j, y in enumerate(self.domain_vars['Y']): 
+                    for k, z in enumerate(self.domain_vars['Z']):
+                        
+                        D_B_fol = self.deriv_vars['D_B_fol'][h,i,j,k] # (3,3) array
+                        curl_B_fol = np.einsum('ijk,jk', self.levi3D, D_B_fol) 
+                        self.meso_vars['curl_B_fol'][h,i,j,k] = curl_B_fol
+
 
 class minitMHD_3D(object):
     """
@@ -3585,7 +3802,7 @@ class minitMHD_3D(object):
         return self.domain_vars['Points']
     
     def get_model_name(self):
-        return 'mfMHD_3D'
+        return 'minitMHD_3D'
     
     def set_find_obs_method(self, find_obs):
         self.find_obs = find_obs
@@ -4088,7 +4305,8 @@ class minitMHD_3D(object):
             # self.meso_structures['SET'][point_indxs_meso_grid] = filtered_vars['SET'][i]
             self.meso_vars['Fab'][point_indxs_meso_grid] = filtered_vars['Fab'][i]
 
-    def compute_fluctuations_task(self, BCmicro, Fabmicro, U, Fab, h, i, j, k):
+    @staticmethod
+    def compute_fluctuations_task(BCmicro, Fabmicro, U, Fab, h, i, j, k):
         """
         Given the micro BC and reference meso velocity (filtering or Favre observers) compute the fluctuations. 
         Given the micro and filtered Fab compute the fluctuations. 
@@ -4110,7 +4328,7 @@ class minitMHD_3D(object):
 
         Returns
         -------
-        (h,i,j,k), eps_emf
+        (h,i,j,k), micro_reynolds, micro_maxwell, micro_faraday
         """
         metric = np.zeros((4,4))
         metric[0,0] = -1.
@@ -4181,7 +4399,7 @@ class minitMHD_3D(object):
                 for j in range(jmin, jmax+1, 1):
                     for k in range(kmin, kmax+1, 1):
 
-                        BCmicro = self.meso_structures['BC'][h,i,j,k]
+                        BCmicro = self.micro_model.meso_structures['BC'][h,i,j,k]
                         Fabmicro = self.micro_model.meso_structures['Fab'][h,i,j,k]
 
                         hh = np.arange(Hmin, Hmax+1,1)[h]
@@ -4267,13 +4485,112 @@ class minitMHD_3D(object):
             self.meso_vars['M_stress'][point_indxs_meso_grid] = filtered_vars['micro_M_stress'][i]
             self.meso_vars['R_stress'][point_indxs_meso_grid] = filtered_vars['micro_R_stress'][i]
     
-    def decompose_structures_task():
+    @staticmethod
+    def p_Gamma_law(eps, n, Gamma):
         """
-        Here you want to compute e_turb. 
-        """
-        pass
+        staticmethod used by decompose_structures_task, that is the 
+        parallel version decompose_structures_gridpoint 
 
-    def decompose_structures_parallel():
+        Parameters: 
+        -----------
+        eps: float  
+            the energy density of the fluid at a point
+
+        n: float
+            the baryon number density of the fluid at a point 
+
+        Gamma: float
+            Gamma factor of the Gamma law 
         """
+        return (Gamma-1)* (eps-n)
+    
+    @staticmethod
+    def decompose_structures_task(BC, SET , p_filt, h, i, j, k):
         """
-        pass
+        Minimal routine: only computing e_turb here. 
+
+        Parameters
+        -----------
+
+        BC: np.array (4,)
+            the baryon current, rank: (1,0)
+
+        SET: np.array (4,4)
+            the Stress-Energy tensor, rank (2,0)
+
+        p_filt: float
+            the filtered pressure, scalar
+
+        h,i,j,k: integers
+            indices of the corresponding gridpoint on meso-grid
+        
+        Returns
+        --------
+        (list, list):
+            first list contains the decomposition of structures at point
+            second list contains indices of point on mesogrid
+        """
+        # As this is staticmethod, no access to self.metric
+        metric = np.zeros((4,4))
+        metric[0,0] = -1.
+        metric[1,1] = metric[2,2] = metric[3,3] = 1.
+        spatial_dims = 3. 
+
+        # Computing the Favre density and velocity
+        n_t = np.sqrt(-Base.Mink_dot(BC, BC))
+        u_t = np.multiply(1./ n_t, BC)
+
+        # remember SET is a rank (2,0) tensor
+        # Computing the SET decomposition at each point
+        eps_t = np.einsum('i,j,ik,jl,kl', u_t, u_t, metric, metric, SET)
+        h_ab = np.einsum('ij,jk->ik', metric + np.einsum('i,j->ij', u_t, u_t), metric) # This is a rank (1,1) tensor, i.e. a real projector.
+        # q_a = - np.einsum('ij,jk,kl,l->i', h_ab, SET, metric, u_t)
+        s_ab = np.einsum('ij,kl,jl->ik', h_ab, h_ab, SET)
+        s = np.einsum('ij,ji->', s_ab, metric) 
+        # s_ab_tracefree = s_ab - np.multiply(s/spatial_dims, metric + np.einsum('i,j->ij', u_t, u_t)) 
+
+        p_t = minitMHD_3D.p_Gamma_law(eps_t, n_t, 4.0/3.0) 
+        Pi_res = s / spatial_dims
+        EOS_res = p_filt - p_t
+        # T_t = p_t/n_t #This must be changed if the EoS is not a Gamma_law
+
+        e_turb = 3 * (Pi_res + EOS_res) / 2.
+        
+        # return [n_t, u_t, eps_t, q_a, s_ab_tracefree, p_t, Pi_res, EOS_res, T_t], [h,i,j,k] 
+        return [e_turb], [h,i,j,k] 
+
+    def decompose_structures_parallel(self, n_cpus):
+        """
+        Routine to decompose structures on the entire grid in 
+        parallel: execute decompose_structures_task() in parallel
+
+        Parameters
+        -----------
+        n_cpus: int
+            numbers of processes for parallelization
+        """
+        # Preparing arguments for pool 
+        args_for_pool=[]
+        for h in range(len(self.domain_vars['T'])):
+            for i in range(len(self.domain_vars['X'])):
+                for j in range(len(self.domain_vars['Y'])):
+                    for k in range(len(self.domain_vars['Z'])):
+                        BC = self.meso_structures['BC'][h,i,j,k]
+                        SET = self.meso_structures['SET'][h,i,j,k]
+                        p_filt = self.meso_vars['p_filt'][h,i,j,k]
+                        args_for_pool.append((BC, SET, p_filt, h,i,j,k))
+
+        with mp.Pool(processes=n_cpus) as pool:
+            print('Decomposing structures in parallel with {} processes'.format(pool._processes), flush=True)
+            for result in pool.starmap(resHD_3D.decompose_structures_task, args_for_pool):
+                h,i,j,k = result[1]
+                # self.meso_vars['n_tilde'][h,i,j,k] = result[0][0]
+                # self.meso_vars['u_tilde'][h,i,j,k,:] = result[0][1]
+                # self.meso_vars['eps_tilde'][h,i,j,k] = result[0][2]
+                # self.meso_vars['q_res'][h,i,j,k,:] = result[0][3]
+                # self.meso_vars['pi_res'][h,i,j,k,:,:] = result[0][4]
+                # self.meso_vars['p_tilde'][h,i,j,k] =  result[0][5]
+                # self.meso_vars['Pi_res'][h,i,j,k] = result[0][6]
+                # self.meso_vars['eos_res'][h,i,j,k] = result[0][7] #If EoS is not modelled you should adjust this!
+                # self.meso_vars['T_tilde'][h,i,j,k] = result[0][8] 
+                self.meso_vars['e_turb'][h,i,j,k] = result[0][0] 

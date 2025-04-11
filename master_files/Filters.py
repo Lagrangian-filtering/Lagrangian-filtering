@@ -13,12 +13,27 @@ import multiprocessing as mp
 from scipy.optimize import minimize, root
 from scipy.interpolate import interpn 
 from itertools import product
-from system.BaseFunctionality import *
+from time import perf_counter
 
+from system.BaseFunctionality import *
 from MicroModels import *
 from FileReaders import *
 from system.BaseFunctionality import *
 
+
+def timer_decorator(func): 
+    """
+    Timing function decorator. 
+
+    Print to output the time taken to execute the function. 
+    """
+    def wrap_func(*args, **kwargs): 
+        t1 = perf_counter() 
+        result = func(*args, **kwargs) 
+        t2 = perf_counter() 
+        print(f'Function {func.__name__!r} executed in {(t2-t1):.4f}s') 
+        return result 
+    return wrap_func 
 
 class FindObs_flux_min(object): 
     """
