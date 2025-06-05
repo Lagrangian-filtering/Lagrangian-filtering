@@ -336,6 +336,7 @@ class METHOD_HDF5(object):
 
 class Aenus3D_h5py(object):
     """
+    Werk: need to think about the case with many snapshots...
     """
     def __init__(self):
         """
