@@ -11,6 +11,7 @@ import time
 import os
 import multiprocessing as mp
 from itertools import product
+from time import perf_counter
 
 from scipy.interpolate import interpn 
 from multimethod import multimethod
@@ -25,6 +26,21 @@ from system.BaseFunctionality import *
 
 levi4D = np.array([[[[ np.sign(i - j) * np.sign(j - k) * np.sign(k - l) * np.sign(i - l) \
                        for l in range(4)] for k in range(4) ] for j in range(4)] for i in range(4)])
+
+def timer_decorator(func): 
+    """
+    Timing function decorator. 
+
+    Print to output the time taken to execute the function. 
+    """
+    def wrap_func(*args, **kwargs): 
+        t1 = perf_counter() 
+        result = func(*args, **kwargs) 
+        t2 = perf_counter() 
+        print(f'Function {func.__name__!r} executed in {(t2-t1):.4f}s') 
+        return result 
+    return wrap_func 
+
 
 class IdealHD_2D(object):
     """
@@ -784,3 +800,21 @@ class IdealMHD_3D(object):
         self.vars = self.prim_vars
         self.vars.update(self.aux_vars)
         self.vars.update(self.structures)
+
+
+
+if __name__ == '__main__':
+
+    eos_para = {"polytrope_K": 4.897 * 1e14, "Gamma_b": 1.31, "Gamma_th": 1.5}
+
+    Aenus_reader = Aenus3D_h5py()
+    micromodel = IdealMHD_3D()
+
+    directory = "/Volumes/Seagate/Work/Miquel's/" + "mri-1225.h5"
+    enclosed_grid = False
+    res = (50,50,50)
+
+    # read_in_data = timer_decorator(Aenus_reader.read_in_data)
+    # read_in_data(directory, enclosed_grid, res, eos_para, micromodel)
+    read_in_data_parallel = timer_decorator(Aenus_reader.read_in_data_parallel)
+    read_in_data_parallel(directory, enclosed_grid, res, eos_para, micromodel, 8)
