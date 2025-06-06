@@ -358,8 +358,7 @@ class Aenus3D_h5py(object):
         # self.polytrope_K = 4.897 * 1e14  #in cgs
         # self.Gamma_b = 1.31
         # self.Gamma_th = 1.5
-
-        
+     
     def cyl2cart_small(self, Rs, phis, zs):
         """
         Compute cartesian grid ranges such that it is fully enclosed by the the cylindrical-grid
@@ -418,7 +417,7 @@ class Aenus3D_h5py(object):
 
         return {'x_range': [x_m, x_M], 'y_range': [y_m, y_M], 'z_range': [z_m, z_M]}
     
-    def read_in_data(self, files_dir, enclosed_grid, res, eos_para, micro_model, method='linear'):
+    def read_in_data(self, files_dir, eos_para, micro_model, enclosed_grid=False, res=None, method='linear'):
         """
         Serial routine to read in data from Aenus sim, set up and fill in the micromodel Cartesian grid via interpolation. 
 
@@ -426,16 +425,16 @@ class Aenus3D_h5py(object):
         ----------
         files_dir: string 
         path to file with data
-        
-        enclosed_grid: bool
-        If True the cartesian grid will be fully contained in the cylindrical one. 
-
-        res: tuple(int, int, int)
-        the resolution of the Cartesian grid
 
         eos_para: dict with keys ["polytrope_K", "Gamma_b", "Gamma_th"]
         
         micro_model: instance of a micromodel class where to store data
+
+        enclosed_grid: bool
+        If True the cartesian grid will be fully contained in the cylindrical one. 
+
+        res: tuple(int, int, int)
+        default case: cartesian grid res is set to match the cylindrical one
          
         method: string
         interpolation method to be used to fill in the Cartesian grid.
@@ -489,15 +488,24 @@ class Aenus3D_h5py(object):
             grid_ranges = self.cyl2cart_large(r, phi, z)
             bounds_error = False
             fill_value = None
+        # print(grid_ranges)
 
-        # s = (enclosed_grid==True) ? 'contained in' : 'containing'
+        if res==None:
+            dR = np.mean(np.diff(r))
+            dphi = np.mean(np.diff(phi))
+            dz = np.mean(np.diff(z))
+            # print(f"dR: {dR}, R dphi: {np.mean(r) * dphi}, dz: {dz}")
+            nx = int((grid_ranges['x_range'][1] - grid_ranges['x_range'][0]) / dR)
+            ny = int((grid_ranges['y_range'][1] - grid_ranges['y_range'][0]) / (np.mean(r) * dphi))
+            nz = int((grid_ranges['z_range'][1] - grid_ranges['z_range'][0]) / dz)
+            res = (nx, ny, nz)
+            # print(res)
+
         s = "enclosed by" if enclosed_grid==True else "containing"
         print(f'Interpolating on the cartesian grid {s} the cylindrical one.')
         print(f'Cylindrical grid size: {len(r)}, {len(phi)}, {len(z)} (R,phi,z).')
         print(f'Cartesian grid size: {res[0]}, {res[1]}, {res[2]} (x,y,z).')
-
-        print(grid_ranges)
-
+        
 
         micro_model.domain_vars['t'] = time
         micro_model.domain_vars['x'] = np.linspace(grid_ranges['x_range'][0], grid_ranges['x_range'][1], res[0])
@@ -669,7 +677,7 @@ class Aenus3D_h5py(object):
 
         return idxs, n, P, Bx, By, Bz, Vx, Vy, Vz
 
-    def read_in_data_parallel(self, files_dir, enclosed_grid, res, eos_para, micro_model, n_cpus, method='linear'):
+    def read_in_data_parallel(self, files_dir, eos_para, micro_model, n_cpus, enclosed_grid=False, res=None, method='linear'):
         """
         Parallelized version of read_in_data()
 
@@ -677,12 +685,6 @@ class Aenus3D_h5py(object):
         ----------
         files_dir: string 
         path to file with data
-        
-        enclosed_grid: bool
-        If True the cartesian grid will be fully contained in the cylindrical one. 
-
-        res: tuple(int, int, int)
-        the resolution of the Cartesian grid
 
         eos_para: dict with keys ["polytrope_K", "Gamma_b", "Gamma_th"]
         
@@ -690,6 +692,12 @@ class Aenus3D_h5py(object):
 
         n_cpus: integer
         number of processes for pool.starmap
+
+        enclosed_grid: bool
+        If True the cartesian grid will be fully contained in the cylindrical one. 
+
+        res: tuple(int, int, int)
+        default case: cartesian grid res is set to match the cyl one
          
         method: string
         interpolation method to be used to fill in the Cartesian grid.
@@ -743,14 +751,24 @@ class Aenus3D_h5py(object):
             grid_ranges = self.cyl2cart_large(r, phi, z)
             bounds_error = False
             fill_value = None
+        # print(grid_ranges)
+
+        if res==None:
+            dR = np.mean(np.diff(r))
+            dphi = np.mean(np.diff(phi))
+            dz = np.mean(np.diff(z))
+            # print(f"dR: {dR}, R dphi: {np.mean(r) * dphi}, dz: {dz}")
+            nx = int((grid_ranges['x_range'][1] - grid_ranges['x_range'][0]) / dR)
+            ny = int((grid_ranges['y_range'][1] - grid_ranges['y_range'][0]) / (np.mean(r) * dphi))
+            nz = int((grid_ranges['z_range'][1] - grid_ranges['z_range'][0]) / dz)
+            res = (nx, ny, nz)
+            # print(res)
 
         # s = (enclosed_grid==True) ? 'contained in' : 'containing'
         s = "enclosed by" if enclosed_grid==True else "containing"
         print(f'Interpolating on the cartesian grid {s} the cylindrical one.')
         print(f'Cylindrical grid size: {len(r)}, {len(phi)}, {len(z)} (R,phi,z).')
         print(f'Cartesian grid size: {res[0]}, {res[1]}, {res[2]} (x,y,z).')
-
-        print(grid_ranges)
 
         micro_model.domain_vars['t'] = time
         micro_model.domain_vars['x'] = np.linspace(grid_ranges['x_range'][0], grid_ranges['x_range'][1], res[0])

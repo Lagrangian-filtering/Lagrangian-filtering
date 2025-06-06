@@ -812,9 +812,10 @@ if __name__ == '__main__':
 
     directory = "/Volumes/Seagate/Work/Miquel's/" + "mri-1225.h5"
     enclosed_grid = False
-    res = (50,50,50)
+    # res = (50,50,50)
 
     # read_in_data = timer_decorator(Aenus_reader.read_in_data)
-    # read_in_data(directory, enclosed_grid, res, eos_para, micromodel)
+    # read_in_data(directory, eos_para, micromodel, enclosed_grid)#, res)
+    # print("\n\n\n")
     read_in_data_parallel = timer_decorator(Aenus_reader.read_in_data_parallel)
-    read_in_data_parallel(directory, enclosed_grid, res, eos_para, micromodel, 8)
+    read_in_data_parallel(directory, eos_para, micromodel, 8, enclosed_grid)#, res)
