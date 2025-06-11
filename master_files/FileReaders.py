@@ -424,7 +424,7 @@ class Aenus3D_h5py(object):
         Parameters
         ----------
         files_dir: string 
-        path to file with data
+        path to directory with data
 
         eos_para: dict with keys ["polytrope_K", "Gamma_b", "Gamma_th"]
         
@@ -445,41 +445,23 @@ class Aenus3D_h5py(object):
             print("Problem with the dictionary of EoS parameters, exiting.")
             return None
 
+        h5py_filenames = sorted(glob.glob(files_dir+str('*.h5')))
+        self.h5py_files = []
+        for filename in h5py_filenames:
+            self.h5py_files.append(h5py.File(filename,'r'))
+        self.num_files = len(self.h5py_files)
 
-        # Reading the simulation output
-        time, r, phi, z, br, bphi, bz, vr, vphi, vz, Pgas, rho = [], [], [], [], [], [], [], [], [], [], [], []
-        # gravpot: do we need the gravitational potential? don't think so. 
-
-        with h5py.File(files_dir, 'r') as file:
-            time = np.array(file['time'][:]) 
-            r = np.array(file['radius'][:])
-            phi = np.array(file['phi'][:])
-            z = np.array(file['z'][:])
-            br = np.array(file['br'][:])
-            bphi = np.array(file['bphi'][:])
-            bz = np.array(file['bz'][:])
-            vr = np.array(file['vr'][:])
-            vphi = np.array(file['vphi'][:])
-            vz = np.array(file['vz'][:])
-            # gravpot: do we need the gravitational potential? don't think so. 
-            Pgas = np.array(file['Pgas'][:])
-            rho = np.array(file['rho'][:])
+        # Reading grid info from simulation output
+        file = self.h5py_files[0]
+        r = np.array(file['radius'][:])
+        phi = np.array(file['phi'][:])
+        z = np.array(file['z'][:])
 
         # rescaling to geometric units: Aenus output is in cgs
-        time *= self.time_factor
         r *= self.length_factor
         z *= self.length_factor
-        br *= self.B_factor
-        bphi *= self.B_factor
-        bz *= self.B_factor
-        vr *= self.velocity_factor
-        vphi *= self.velocity_factor
-        vz *= self.velocity_factor
-        # gravpot: do we need the gravitational potential? don't think so. 
-        Pgas *= self.pressure_factor
-        rho *= self.density_factor
 
-        # Creating the cartesian grid and setting up domain vars
+        # Creating the cartesian grid
         if enclosed_grid:
             grid_ranges = self.cyl2cart_small(r, phi, z)
             bounds_error = True
@@ -506,20 +488,15 @@ class Aenus3D_h5py(object):
         print(f'Cylindrical grid size: {len(r)}, {len(phi)}, {len(z)} (R,phi,z).')
         print(f'Cartesian grid size: {res[0]}, {res[1]}, {res[2]} (x,y,z).')
         
-
-        micro_model.domain_vars['t'] = time
+        # Set grid properties: first spatial, then loop over and set time-related ones
         micro_model.domain_vars['x'] = np.linspace(grid_ranges['x_range'][0], grid_ranges['x_range'][1], res[0])
         micro_model.domain_vars['y'] = np.linspace(grid_ranges['y_range'][0], grid_ranges['y_range'][1], res[1])
         micro_model.domain_vars['z'] = np.linspace(grid_ranges['z_range'][0], grid_ranges['z_range'][1], res[2])
-        micro_model.domain_vars['points'] = [micro_model.domain_vars['t'], micro_model.domain_vars['x'], micro_model.domain_vars['y'], micro_model.domain_vars['z']]
 
-        micro_model.domain_vars['nt'] = len(micro_model.domain_vars['t'])
         micro_model.domain_vars['nx'] = len(micro_model.domain_vars['x'])
         micro_model.domain_vars['ny'] = len(micro_model.domain_vars['y'])
         micro_model.domain_vars['nz'] = len(micro_model.domain_vars['z'])
 
-        micro_model.domain_vars['tmin'] = np.amin(micro_model.domain_vars['t'])
-        micro_model.domain_vars['tmax'] = np.amax(micro_model.domain_vars['t'])
         micro_model.domain_vars['xmin'] = np.amin(micro_model.domain_vars['x'])
         micro_model.domain_vars['xmax'] = np.amax(micro_model.domain_vars['x'])
         micro_model.domain_vars['ymin'] = np.amin(micro_model.domain_vars['y'])
@@ -527,14 +504,23 @@ class Aenus3D_h5py(object):
         micro_model.domain_vars['zmin'] = np.amin(micro_model.domain_vars['z'])
         micro_model.domain_vars['zmax'] = np.amax(micro_model.domain_vars['z'])
 
-        micro_model.domain_vars['dt'] = (micro_model.domain_vars['tmax'] - micro_model.domain_vars['tmin']) / micro_model.domain_vars['nt']
         micro_model.domain_vars['dx'] = (micro_model.domain_vars['xmax'] - micro_model.domain_vars['xmin']) / micro_model.domain_vars['nx']
         micro_model.domain_vars['dy'] = (micro_model.domain_vars['ymax'] - micro_model.domain_vars['ymin']) / micro_model.domain_vars['ny']
         micro_model.domain_vars['dz'] = (micro_model.domain_vars['zmax'] - micro_model.domain_vars['zmin']) / micro_model.domain_vars['nz']
 
+        # Loop over files and set time-related stuff
+        for counter in range(self.num_files):
+            file = self.h5py_files[0]
+            time = file['time'][:] * self.time_factor
+            micro_model.domain_vars['t'].append(time)
+        micro_model.domain_vars['nt'] =  self.num_files#len(micro_model.domain_vars['t'])
+        micro_model.domain_vars['tmin'] = np.amin(micro_model.domain_vars['t'])
+        micro_model.domain_vars['tmax'] = np.amax(micro_model.domain_vars['t'])
+        micro_model.domain_vars['dt'] = (micro_model.domain_vars['tmax'] - micro_model.domain_vars['tmin']) / micro_model.domain_vars['nt']
+        micro_model.domain_vars['points'] = [micro_model.domain_vars['t'], micro_model.domain_vars['x'], micro_model.domain_vars['y'], micro_model.domain_vars['z']]
+
         # Setting up the fields
         shape = (micro_model.domain_vars['nt'], micro_model.domain_vars['nx'], micro_model.domain_vars['ny'], micro_model.domain_vars['nz'])
-
         micro_model.prim_vars['Bx'] = np.zeros(shape)
         micro_model.prim_vars['By'] = np.zeros(shape)
         micro_model.prim_vars['Bz'] = np.zeros(shape)
@@ -546,6 +532,27 @@ class Aenus3D_h5py(object):
     
         # Interpolating from cylindrical grid
         for h, T in enumerate(micro_model.domain_vars['t']):
+            file = self.h5py_files[h]
+            br = np.array(file['br'][:])
+            bphi = np.array(file['bphi'][:])
+            bz = np.array(file['bz'][:])
+            vr = np.array(file['vr'][:])
+            vphi = np.array(file['vphi'][:])
+            vz = np.array(file['vz'][:])
+            # gravpot: do we need the gravitational potential? don't think so. 
+            Pgas = np.array(file['Pgas'][:])
+            rho = np.array(file['rho'][:])
+
+            br *= self.B_factor
+            bphi *= self.B_factor
+            bz *= self.B_factor
+            vr *= self.velocity_factor
+            vphi *= self.velocity_factor
+            vz *= self.velocity_factor
+            # gravpot: do we need the gravitational potential? don't think so. 
+            Pgas *= self.pressure_factor
+            rho *= self.density_factor
+
             for i, X in enumerate(micro_model.domain_vars['x']):
                 for j, Y in enumerate(micro_model.domain_vars['y']):
                     for k, Z in enumerate(micro_model.domain_vars['z']):
@@ -555,7 +562,6 @@ class Aenus3D_h5py(object):
                         micro_model.prim_vars['n'][h,i,j,k] = interpn([r, phi, z], rho, [R,PHI,Z], method = method, bounds_error = bounds_error, fill_value = fill_value)[0]
                         micro_model.prim_vars['p'][h,i,j,k] = interpn([r, phi, z], Pgas, [R,PHI,Z], method = method, bounds_error = bounds_error, fill_value = fill_value)[0]
 
-                        
                         BR = interpn([r, phi, z], br, [R,PHI,Z], method = method, bounds_error = bounds_error, fill_value = fill_value)[0]
                         Bphi = interpn([r, phi, z], bphi, [R,PHI,Z], method = method, bounds_error = bounds_error, fill_value = fill_value)[0]
                         Bx = BR * np.cos(PHI) + Bphi * np.sin(PHI)
@@ -628,13 +634,13 @@ class Aenus3D_h5py(object):
         Parameters
         ----------
 
-        point = [t, x, y, z]
+        point = [x, y, z]
 
-        idxs = [h, i, j, k]
+        idxs = [i, j, k]
 
         Returns
         -------
-        idxs, n, P, Bx, By, Bz, Vx, Vy, Vz
+        idxs, n, p, Bx, By, Bz, Vx, Vy, Vz
         """
         global enclosed_grid
         global method
@@ -655,13 +661,13 @@ class Aenus3D_h5py(object):
             bounds_error = False
             fill_value = None
 
-        t,x,y,z = point
+        x,y,z = point
         R = np.sqrt(x**2 + y**2)
         PHI = math.atan2(y,x)
         Z = z
         
         n = interpn(cyl_grid, rho, [R,PHI,Z], method = method, bounds_error = bounds_error, fill_value = fill_value)[0]
-        P = interpn(cyl_grid, Pgas, [R,PHI,Z], method = method, bounds_error = bounds_error, fill_value = fill_value)[0]
+        p = interpn(cyl_grid, Pgas, [R,PHI,Z], method = method, bounds_error = bounds_error, fill_value = fill_value)[0]
 
         BR = interpn(cyl_grid, br, [R,PHI,Z], method = method, bounds_error = bounds_error, fill_value = fill_value)[0]
         Bphi = interpn(cyl_grid, bphi, [R,PHI,Z], method = method, bounds_error = bounds_error, fill_value = fill_value)[0]
@@ -675,7 +681,7 @@ class Aenus3D_h5py(object):
         Vy = VR * np.sin(PHI) + Vphi * np.cos(PHI)
         Vz = interpn(cyl_grid, bz, [R,PHI,Z], method = method, bounds_error = bounds_error, fill_value = fill_value)[0]
 
-        return idxs, n, P, Bx, By, Bz, Vx, Vy, Vz
+        return idxs, n, p, Bx, By, Bz, Vx, Vy, Vz
 
     def read_in_data_parallel(self, files_dir, eos_para, micro_model, n_cpus, enclosed_grid=False, res=None, method='linear'):
         """
@@ -684,7 +690,7 @@ class Aenus3D_h5py(object):
         Parameters
         ----------
         files_dir: string 
-        path to file with data
+        path to directory with data
 
         eos_para: dict with keys ["polytrope_K", "Gamma_b", "Gamma_th"]
         
@@ -708,49 +714,27 @@ class Aenus3D_h5py(object):
             print("Problem with the dictionary of EoS parameters, exiting.")
             return None
 
+        h5py_filenames = sorted(glob.glob(files_dir+str('*.h5')))
+        self.h5py_files = []
+        for filename in h5py_filenames:
+            self.h5py_files.append(h5py.File(filename,'r'))
+        self.num_files = len(self.h5py_files)
 
-        # Reading the simulation output
-        time, r, phi, z, br, bphi, bz, vr, vphi, vz, Pgas, rho = [], [], [], [], [], [], [], [], [], [], [], []
-        # gravpot: do we need the gravitational potential? don't think so. 
-
-        with h5py.File(files_dir, 'r') as file:
-            time = np.array(file['time'][:]) 
-            r = np.array(file['radius'][:])
-            phi = np.array(file['phi'][:])
-            z = np.array(file['z'][:])
-            br = np.array(file['br'][:])
-            bphi = np.array(file['bphi'][:])
-            bz = np.array(file['bz'][:])
-            vr = np.array(file['vr'][:])
-            vphi = np.array(file['vphi'][:])
-            vz = np.array(file['vz'][:])
-            # gravpot: do we need the gravitational potential? don't think so. 
-            Pgas = np.array(file['Pgas'][:])
-            rho = np.array(file['rho'][:])
+        # Reading grid info from simulation output
+        file = self.h5py_files[0]
+        r = np.array(file['radius'][:])
+        phi = np.array(file['phi'][:])
+        z = np.array(file['z'][:])
 
         # rescaling to geometric units: Aenus output is in cgs
-        time *= self.time_factor
         r *= self.length_factor
         z *= self.length_factor
-        br *= self.B_factor
-        bphi *= self.B_factor
-        bz *= self.B_factor
-        vr *= self.velocity_factor
-        vphi *= self.velocity_factor
-        vz *= self.velocity_factor
-        # gravpot: do we need the gravitational potential? don't think so. 
-        Pgas *= self.pressure_factor
-        rho *= self.density_factor
 
         # Creating the cartesian grid and setting up domain vars
         if enclosed_grid:
             grid_ranges = self.cyl2cart_small(r, phi, z)
-            bounds_error = True
-            fill_value = None
         else: 
             grid_ranges = self.cyl2cart_large(r, phi, z)
-            bounds_error = False
-            fill_value = None
         # print(grid_ranges)
 
         if res==None:
@@ -770,19 +754,15 @@ class Aenus3D_h5py(object):
         print(f'Cylindrical grid size: {len(r)}, {len(phi)}, {len(z)} (R,phi,z).')
         print(f'Cartesian grid size: {res[0]}, {res[1]}, {res[2]} (x,y,z).')
 
-        micro_model.domain_vars['t'] = time
+        # Set grid properties: first spatial, then loop over and set time-related ones
         micro_model.domain_vars['x'] = np.linspace(grid_ranges['x_range'][0], grid_ranges['x_range'][1], res[0])
         micro_model.domain_vars['y'] = np.linspace(grid_ranges['y_range'][0], grid_ranges['y_range'][1], res[1])
         micro_model.domain_vars['z'] = np.linspace(grid_ranges['z_range'][0], grid_ranges['z_range'][1], res[2])
-        micro_model.domain_vars['points'] = [micro_model.domain_vars['t'], micro_model.domain_vars['x'], micro_model.domain_vars['y'], micro_model.domain_vars['z']]
 
-        micro_model.domain_vars['nt'] = len(micro_model.domain_vars['t'])
         micro_model.domain_vars['nx'] = len(micro_model.domain_vars['x'])
         micro_model.domain_vars['ny'] = len(micro_model.domain_vars['y'])
         micro_model.domain_vars['nz'] = len(micro_model.domain_vars['z'])
 
-        micro_model.domain_vars['tmin'] = np.amin(micro_model.domain_vars['t'])
-        micro_model.domain_vars['tmax'] = np.amax(micro_model.domain_vars['t'])
         micro_model.domain_vars['xmin'] = np.amin(micro_model.domain_vars['x'])
         micro_model.domain_vars['xmax'] = np.amax(micro_model.domain_vars['x'])
         micro_model.domain_vars['ymin'] = np.amin(micro_model.domain_vars['y'])
@@ -790,14 +770,23 @@ class Aenus3D_h5py(object):
         micro_model.domain_vars['zmin'] = np.amin(micro_model.domain_vars['z'])
         micro_model.domain_vars['zmax'] = np.amax(micro_model.domain_vars['z'])
 
-        micro_model.domain_vars['dt'] = (micro_model.domain_vars['tmax'] - micro_model.domain_vars['tmin']) / micro_model.domain_vars['nt']
         micro_model.domain_vars['dx'] = (micro_model.domain_vars['xmax'] - micro_model.domain_vars['xmin']) / micro_model.domain_vars['nx']
         micro_model.domain_vars['dy'] = (micro_model.domain_vars['ymax'] - micro_model.domain_vars['ymin']) / micro_model.domain_vars['ny']
         micro_model.domain_vars['dz'] = (micro_model.domain_vars['zmax'] - micro_model.domain_vars['zmin']) / micro_model.domain_vars['nz']
 
+        # Loop over files and set time-related stuff
+        for counter in range(self.num_files):
+            file = self.h5py_files[0]
+            time = file['time'][:] * self.time_factor
+            micro_model.domain_vars['t'].append(time)
+        micro_model.domain_vars['nt'] =  self.num_files#len(micro_model.domain_vars['t'])
+        micro_model.domain_vars['tmin'] = np.amin(micro_model.domain_vars['t'])
+        micro_model.domain_vars['tmax'] = np.amax(micro_model.domain_vars['t'])
+        micro_model.domain_vars['dt'] = (micro_model.domain_vars['tmax'] - micro_model.domain_vars['tmin']) / micro_model.domain_vars['nt']
+        micro_model.domain_vars['points'] = [micro_model.domain_vars['t'], micro_model.domain_vars['x'], micro_model.domain_vars['y'], micro_model.domain_vars['z']]
+
         # Setting up the fields
         shape = (micro_model.domain_vars['nt'], micro_model.domain_vars['nx'], micro_model.domain_vars['ny'], micro_model.domain_vars['nz'])
-
         micro_model.prim_vars['Bx'] = np.zeros(shape)
         micro_model.prim_vars['By'] = np.zeros(shape)
         micro_model.prim_vars['Bz'] = np.zeros(shape)
@@ -808,28 +797,51 @@ class Aenus3D_h5py(object):
         micro_model.prim_vars['p'] = np.zeros(shape)
 
         args_for_pool=[]
+        for i, X in enumerate(micro_model.domain_vars['x']):
+            for j, Y in enumerate(micro_model.domain_vars['y']):
+                for k, Z in enumerate(micro_model.domain_vars['z']):
+                    point, idxs = [X,Y,Z], [i,j,k]
+                    args_for_pool.append((point, idxs))
+
+
         for h, T in enumerate(micro_model.domain_vars['t']):
-            for i, X in enumerate(micro_model.domain_vars['x']):
-                for j, Y in enumerate(micro_model.domain_vars['y']):
-                    for k, Z in enumerate(micro_model.domain_vars['z']):
-                        point, idxs = [T,X,Y,Z], [h,i,j,k]
-                        args_for_pool.append((point, idxs))
+            file = self.h5py_files[h]
+            br = np.array(file['br'][:])
+            bphi = np.array(file['bphi'][:])
+            bz = np.array(file['bz'][:])
+            vr = np.array(file['vr'][:])
+            vphi = np.array(file['vphi'][:])
+            vz = np.array(file['vz'][:])
+            # gravpot: do we need the gravitational potential? don't think so. 
+            Pgas = np.array(file['Pgas'][:])
+            rho = np.array(file['rho'][:])
 
-        init = Aenus3D_h5py.RID_initializer
-        initargs=(enclosed_grid, [r,phi,z], rho, Pgas, br, bphi, bz, vr, vphi, vz, method)
+            br *= self.B_factor
+            bphi *= self.B_factor
+            bz *= self.B_factor
+            vr *= self.velocity_factor
+            vphi *= self.velocity_factor
+            vz *= self.velocity_factor
+            # gravpot: do we need the gravitational potential? don't think so. 
+            Pgas *= self.pressure_factor
+            rho *= self.density_factor
 
-        with mp.Pool(initializer=init, initargs=initargs, processes=n_cpus) as pool:
-            print('Interpolating on the Cartesian grid in parallel with {} processes'.format(pool._processes), flush=True)
-            for result in pool.starmap(Aenus3D_h5py.task_RID, args_for_pool):
-                h,i,j,k = result[0]
-                micro_model.prim_vars['n'] = result[1]
-                micro_model.prim_vars['P'] = result[2]
-                micro_model.prim_vars['Bx'] = result[3]
-                micro_model.prim_vars['By'] = result[4]
-                micro_model.prim_vars['Bz'] = result[5]
-                micro_model.prim_vars['vx'] = result[6]
-                micro_model.prim_vars['vy'] = result[7]
-                micro_model.prim_vars['vz'] = result[8]
+            init = Aenus3D_h5py.RID_initializer
+            initargs=(enclosed_grid, [r,phi,z], rho, Pgas, br, bphi, bz, vr, vphi, vz, method)
+
+            with mp.Pool(initializer=init, initargs=initargs, processes=n_cpus) as pool:
+                if h==0:
+                    print('Interpolating on the Cartesian grid in parallel with {} processes'.format(pool._processes), flush=True)
+                for result in pool.starmap(Aenus3D_h5py.task_RID, args_for_pool):
+                    i,j,k = result[0]
+                    micro_model.prim_vars['n'][h,:] = result[1]
+                    micro_model.prim_vars['p'][h,:] = result[2]
+                    micro_model.prim_vars['Bx'][h,:] = result[3]
+                    micro_model.prim_vars['By'][h,:] = result[4]
+                    micro_model.prim_vars['Bz'][h,:] = result[5]
+                    micro_model.prim_vars['vx'][h,:] = result[6]
+                    micro_model.prim_vars['vy'][h,:] = result[7]
+                    micro_model.prim_vars['vz'][h,:] = result[8]
 
         # Setting up the auxiliary variables: Lorentz factor 
         W = (micro_model.prim_vars['vx']**2 + micro_model.prim_vars['vy']**2 + micro_model.prim_vars['vz']**2)

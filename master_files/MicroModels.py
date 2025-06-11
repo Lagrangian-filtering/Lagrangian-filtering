@@ -810,12 +810,13 @@ if __name__ == '__main__':
     Aenus_reader = Aenus3D_h5py()
     micromodel = IdealMHD_3D()
 
-    directory = "/Volumes/Seagate/Work/Miquel's/" + "mri-1225.h5"
+    directory = "/Volumes/Seagate/Work/Miquel's/"# + "mri-1225.h5"
     enclosed_grid = False
-    # res = (50,50,50)
+    res = (50,50,50)
 
     # read_in_data = timer_decorator(Aenus_reader.read_in_data)
-    # read_in_data(directory, eos_para, micromodel, enclosed_grid)#, res)
+    # read_in_data(directory, eos_para, micromodel, enclosed_grid, res)
     # print("\n\n\n")
+    # micromodel = IdealMHD_3D()
     read_in_data_parallel = timer_decorator(Aenus_reader.read_in_data_parallel)
-    read_in_data_parallel(directory, eos_para, micromodel, 8, enclosed_grid)#, res)
+    read_in_data_parallel(directory, eos_para, micromodel, 8, enclosed_grid, res)
