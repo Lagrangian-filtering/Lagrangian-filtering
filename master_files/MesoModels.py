@@ -2982,7 +2982,7 @@ class mfMHD_3D(object):
 
         The grid is set up so that the mesomodel central slice is aligned with that of the micromodel. 
         If the number of meso-slices is odd, then mesogrid is set up so that there's an equal number of slices beyond and 
-        before the central one. IF NUMSLICES IS EVEN, THIS NUMBER IS ADDED 1 
+        before the central one. If num_T_slices is even, this number is added 1. Case where num_T_slices=1 handled differently.
 
         The spatial points on each mesomodel slice are aligned with (part of) those of the micromodel grid.  
         The advantage of this routine over 'setup_meso_grid' is that it does not require the micro-slices to be stored with 
@@ -3010,11 +3010,19 @@ class mfMHD_3D(object):
         central_t_idx = int((nt-1)/2)
         central_t = self.micro_model.domain_vars['t'][central_t_idx]
 
-        if not( num_T_slices % 2): # even number of meso slices 
-            num_T_slices = num_T_slices + 1
+        # Force odd number of time slices
+        if num_T_slices % 2 == 0 and num_T_slices > 1:
+            num_T_slices += 1
 
         T_max = central_t + (num_T_slices/2) * self.micro_model.domain_vars['dx'] * coarse_factor
         T_min = central_t - (num_T_slices/2) * self.micro_model.domain_vars['dx'] * coarse_factor
+
+        # Time domain boundaries
+        if num_T_slices > 1:
+            T_max = central_t + (num_T_slices // 2) * self.micro_model.domain_vars['dx'] * coarse_factor
+            T_min = central_t - (num_T_slices // 2) * self.micro_model.domain_vars['dx'] * coarse_factor
+        else:
+            T_max = T_min = central_t  # Single time slice at center
 
         patch_bdrs = [[T_min, T_max]]
         for elem in spatial_bdrs: 
@@ -3040,15 +3048,20 @@ class mfMHD_3D(object):
         idx_mins = Base.find_nearest_cell(spatial_patch_min, micro_spatial_pts)
         idx_maxs = Base.find_nearest_cell(spatial_patch_max, micro_spatial_pts)
 
-        halfnum_T_slices = int(num_T_slices/2)
-        for h in range(halfnum_T_slices+1): 
-            T = central_t + h * self.micro_model.domain_vars['dx'] * coarse_factor
-            self.domain_vars['T'].append(T)
-        for h in range(1, halfnum_T_slices+1):
-            T = central_t - h * self.micro_model.domain_vars['dx'] * coarse_factor
-            self.domain_vars['T'].append(T)
-            
-        self.domain_vars['T'] = np.sort(np.array(self.domain_vars['T']))
+
+        if num_T_slices == 1:
+            self.domain_vars['T'].append(central_t)
+        else:
+            halfnum_T_slices = num_T_slices // 2
+            for h in range(halfnum_T_slices + 1):
+                T = central_t + h * self.micro_model.domain_vars['dx'] * coarse_factor
+                self.domain_vars['T'].append(T)
+            for h in range(1, halfnum_T_slices + 1):
+                T = central_t - h * self.micro_model.domain_vars['dx'] * coarse_factor
+                self.domain_vars['T'].append(T)
+
+            self.domain_vars['T'] = np.sort(np.array(self.domain_vars['T']))
+
 
         i,j,k = idx_mins[0], idx_mins[1], idx_mins[2]
         while i <= idx_maxs[0]:
@@ -4041,8 +4054,7 @@ class minitMHD_3D(object):
 
         The grid is set up so that the mesomodel central slice is aligned with that of the micromodel. 
         If the number of meso-slices is odd, then mesogrid is set up so that there's an equal number of slices beyond and 
-        before the central one. If the number of mesoslices is even (DEPRECATED) there mesogrid is set up so that there's
-        one extra slice beyond than before. IF NUMSLICES IS EVEN, THIS NUMBER IS ADDED 1, ALSO OK WITH SINGLE MESO-SLICE.
+        before the central one. If num_T_slices is even, this number is added 1. Case where num_T_slices=1 handled differently.
 
         The spatial points on each mesomodel slice are aligned with (part of) those of the micromodel grid.  
         The advantage of this routine over 'setup_meso_grid' is that it does not require the micro-slices to be stored with 
@@ -4070,11 +4082,19 @@ class minitMHD_3D(object):
         central_t_idx = int((nt-1)/2)
         central_t = self.micro_model.domain_vars['t'][central_t_idx]
 
-        if not( num_T_slices % 2): # even number of meso slices 
-            num_T_slices = num_T_slices + 1
+        # Force odd number of time slices
+        if num_T_slices % 2 == 0 and num_T_slices > 1:
+            num_T_slices += 1
 
         T_max = central_t + (num_T_slices/2) * self.micro_model.domain_vars['dx'] * coarse_factor
         T_min = central_t - (num_T_slices/2) * self.micro_model.domain_vars['dx'] * coarse_factor
+
+        # Time domain boundaries
+        if num_T_slices > 1:
+            T_max = central_t + (num_T_slices // 2) * self.micro_model.domain_vars['dx'] * coarse_factor
+            T_min = central_t - (num_T_slices // 2) * self.micro_model.domain_vars['dx'] * coarse_factor
+        else:
+            T_max = T_min = central_t  # Single time slice at center
 
         patch_bdrs = [[T_min, T_max]]
         for elem in spatial_bdrs: 
@@ -4100,15 +4120,20 @@ class minitMHD_3D(object):
         idx_mins = Base.find_nearest_cell(spatial_patch_min, micro_spatial_pts)
         idx_maxs = Base.find_nearest_cell(spatial_patch_max, micro_spatial_pts)
 
-        halfnum_T_slices = int(num_T_slices/2)
-        for h in range(halfnum_T_slices+1): 
-            T = central_t + h * self.micro_model.domain_vars['dx'] * coarse_factor
-            self.domain_vars['T'].append(T)
-        for h in range(1, halfnum_T_slices+1):
-            T = central_t - h * self.micro_model.domain_vars['dx'] * coarse_factor
-            self.domain_vars['T'].append(T)
-            
-        self.domain_vars['T'] = np.sort(np.array(self.domain_vars['T']))
+
+        if num_T_slices == 1:
+            self.domain_vars['T'].append(central_t)
+        else:
+            halfnum_T_slices = num_T_slices // 2
+            for h in range(halfnum_T_slices + 1):
+                T = central_t + h * self.micro_model.domain_vars['dx'] * coarse_factor
+                self.domain_vars['T'].append(T)
+            for h in range(1, halfnum_T_slices + 1):
+                T = central_t - h * self.micro_model.domain_vars['dx'] * coarse_factor
+                self.domain_vars['T'].append(T)
+
+            self.domain_vars['T'] = np.sort(np.array(self.domain_vars['T']))
+
 
         i,j,k = idx_mins[0], idx_mins[1], idx_mins[2]
         while i <= idx_maxs[0]:
@@ -4239,6 +4264,92 @@ class minitMHD_3D(object):
                 failed_idxs_meso_grid = indices_meso_grid[failures[i]]
                 print('{}\n'.format(failed_idxs_meso_grid))
 
+    def find_observers_parallel_random(self, n_cpus, n_random_points):
+        """
+        Finds observers at a randomly selected subset of spatial points on the meso-grid,
+        and repeats this selection across all time slices. The computation is parallelized.
+
+        This method is intended for analysis requiring time derivatives of filtered data,
+        where consistent spatial sampling across all time slices is necessary.
+
+        Parameters
+        ----------
+        n_cpus : int
+            Number of CPU cores to use for parallel computation.
+            
+        n_random_points : int
+            Number of random spatial points (x, y, z) to select from the meso-grid.
+            These spatial points will be repeated across all time slices (t) for observer computation.
+
+        Notes
+        -----
+        - The meso-grid must already be initialized using `setup_meso_grid()`.
+        - The method relies on the routine `find_obs.find_observers_parallel(...)`.
+        - Successful observers and associated errors are stored in `self.filter_vars`:
+            - `self.filter_vars['U']` stores the observer tensors.
+            - `self.filter_vars['U_errors']` stores the relative error at each observer.
+            - `self.filter_vars['U_success']` is a dictionary mapping meso-grid index tuples
+            to boolean values indicating success or failure.
+        - If observer construction fails at any point, the corresponding location is logged.
+
+        """
+        ts = self.domain_vars['T']
+        xs = self.domain_vars['X']
+        ys = self.domain_vars['Y']
+        zs = self.domain_vars['Z']
+
+        t_idxs = np.arange(len(ts))
+        x_idxs = np.arange(len(xs))
+        y_idxs = np.arange(len(ys))
+        z_idxs = np.arange(len(zs))
+
+        # Generate all spatial combinations (only x, y, z)
+        spatial_points = list(product(xs, ys, zs))
+        spatial_indices = list(product(x_idxs, y_idxs, z_idxs))
+
+        total_spatial_points = len(spatial_points)
+        if n_random_points > total_spatial_points:
+            raise ValueError(f"Requested {n_random_points} spatial points, but only {total_spatial_points} available.")
+
+        # Randomly sample only from spatial grid
+        sampled_spatial_indices = random.sample(range(total_spatial_points), n_random_points)
+        sampled_spatial_points = [spatial_points[i] for i in sampled_spatial_indices]
+        sampled_spatial_idxs = [spatial_indices[i] for i in sampled_spatial_indices]
+
+        # Now replicate each sampled spatial point at all time slices
+        sampled_points = []
+        sampled_indices_meso = []
+
+        for t_idx, t in enumerate(ts):
+            for i in range(n_random_points):
+                spatial_point = sampled_spatial_points[i]
+                spatial_idx = sampled_spatial_idxs[i]
+
+                point = (t, *spatial_point)
+                index = (t_idx, *spatial_idx)
+
+                sampled_points.append(point)
+                sampled_indices_meso.append(index)
+
+        # Run observer search
+        micro_grid = self.micro_model.domain_vars['points']
+        micro_BC = self.micro_model.structures['BC']
+        successes, failures = self.find_obs.find_observers_parallel(micro_grid, micro_BC, sampled_points, n_cpus)
+
+        # Store results
+        for i in range(len(successes[0])):
+            point_indxs_meso_grid = sampled_indices_meso[successes[0][i]]
+            self.filter_vars['U'][point_indxs_meso_grid] = successes[1][i]
+            self.filter_vars['U_errors'][point_indxs_meso_grid] = successes[2][i]
+            self.filter_vars['U_success'].update({(point_indxs_meso_grid): True})
+
+        # Print failures
+        if len(failures) != 0:
+            print('Observers could not be found at the following points:\n')
+            for i in range(len(failures)):
+                failed_idxs_meso_grid = sampled_indices_meso[failures[i]]
+                print(f'{failed_idxs_meso_grid}\n')
+                
     def filter_micro_vars_parallel(self, n_cpus):
         """
         Filter all meso_model structures AND micro pressure at all points on the meso-grid. 
@@ -4259,31 +4370,26 @@ class minitMHD_3D(object):
         Requires setup_meso_grid() to be called first.
         Also find_observers() should be called first, although not doing so won't crash it. 
         """
-        ts = self.domain_vars['T']
-        xs = self.domain_vars['X']
-        ys = self.domain_vars['Y']
-        zs = self.domain_vars['Z']
-
-        t_idxs = np.arange(len(ts))
-        x_idxs = np.arange(len(xs))
-        y_idxs = np.arange(len(ys))
-        z_idxs = np.arange(len(zs))
-
+        # Loop through the entire meso grid: select where filtering observer has been computed succesfully. 
         points = []
-        for elem in product(ts,xs,ys,zs):
-            points.append(list(elem))
-
         indices_meso_grid = []
-        for elem in product(t_idxs, x_idxs, y_idxs, z_idxs):
-            indices_meso_grid.append(elem)
-
         observers = []
-        for elem in product(t_idxs, x_idxs, y_idxs, z_idxs):
-            if self.filter_vars['U_success'][elem]:
-                observers.append(self.filter_vars['U'][elem])
-            else:
-                print('Observers are not computed on (parts of) the grid!')
-                return None
+
+        for idx in product(
+            range(len(self.domain_vars['T'])),
+            range(len(self.domain_vars['X'])),
+            range(len(self.domain_vars['Y'])),
+            range(len(self.domain_vars['Z']))
+        ):
+            if self.filter_vars['U_success'].get(idx, False):
+                t = self.domain_vars['T'][idx[0]]
+                x = self.domain_vars['X'][idx[1]]
+                y = self.domain_vars['Y'][idx[2]]
+                z = self.domain_vars['Z'][idx[3]]
+
+                points.append([t, x, y, z])
+                indices_meso_grid.append(idx)
+                observers.append(self.filter_vars['U'][idx])
 
         # vars = ['BC', 'SET', 'Fab']
         vars = ['BC', 'Fab']
