@@ -756,7 +756,7 @@ class IdealMHD_3D(object):
                                            self.domain_vars['nz'],4,4))
         self.structures["Fab"] = np.zeros((self.domain_vars['nt'],self.domain_vars['nx'],self.domain_vars['ny'],
                                                self.domain_vars['nz'],4,4))
-
+     
         for h in range(self.domain_vars['nt']):
             for i in range(self.domain_vars['nx']):
                 for j in range(self.domain_vars['ny']): 
@@ -776,9 +776,8 @@ class IdealMHD_3D(object):
                         ba = np.array([b0] + list(bi))
                         bsq = Base.Mink_dot(ba, ba)
                         # bsq = np.multiply( 1/(self.aux_vars['W']**2) , np.dot(Bs, Bs)) + np.multiply( 1/self.aux_vars['W'], np.dot(Bs,vel_vec[1:])) 
-                        
-                        rhohstar = np.multiply( self.prim_vars['n'] , self.aux_strs['h'][h,i,j,k] ) + bsq
-                        pstar = self.prim_vars['p'] + bsq/2 
+                        rhohstar = self.prim_vars['n'][h,i,j,k] * self.aux_vars['h'][h,i,j,k] + bsq
+                        pstar = self.prim_vars['p'][h,i,j,k] + bsq/2 
 
 
                         self.structures['SET'][h,i,j,k,:,:] = np.multiply(rhohstar , np.outer(vel_vec, vel_vec))  + np.multiply(pstar, self.metric ) \
@@ -787,7 +786,7 @@ class IdealMHD_3D(object):
                         Maxwell_contrav = np.outer(ba, vel_vec) - np.outer(vel_vec, ba)
                         Maxwell_covar = np.einsum('ij,kl,jl->ik', self.metric, self.metric, Maxwell_contrav )
 
-                        self.structures['Fab'][h,i,j,k,:,:] = np.multiply(1/2, np.einsum('ijkl,kl->ij', self.Levi4D, Maxwell_covar) )
+                        self.structures['Fab'][h,i,j,k,:,:] = np.multiply(1/2, np.einsum('ijkl,kl->ij', levi4D, Maxwell_covar) )
                         
 
                         # Here is missing the charge four current. This would have to be stored and filtered if the 
