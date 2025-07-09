@@ -1324,7 +1324,7 @@ class smart_FindObs_root_parallel(object):
         initargs = (L, grid, BC)
 
         with mp.Pool(initializer=init, initargs=initargs, processes=n_cpus) as pool:
-            print('Finding observers in parallel with {} processes\n'.format(pool._processes), flush=True)
+            print('Finding observers in parallel with {} processes'.format(pool._processes), flush=True)
             for result in pool.starmap(self.find_observer_Gauss, args_for_pool):
                 if (result[0] == True): 
                     success_pos.append(result[1])
@@ -2069,7 +2069,7 @@ class smart_box_filter_parallel(object):
         initargs=(self.spatial_dims, self.filter_width, micro_grid, micro_var)
 
         with mp.Pool(initializer=init, initargs=initargs, processes=n_cpus) as pool:
-            print('Filtering {} in parallel with {} processes\n'.format(micro_var_str, pool._processes), flush=True)
+            print('Filtering {} in parallel with {} processes'.format(micro_var_str, pool._processes), flush=True)
             for result in pool.starmap(self.filter_var_point_gauss, args_for_pool):
                 position_in_list.append(result[0])
                 filtered_var.append(result[1])

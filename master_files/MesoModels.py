@@ -3707,7 +3707,7 @@ class minitMHD_3D(object):
         self.meso_scalars_strs = ['e_turb']
         self.meso_r2tensors_strs = ['F_stress', 'M_stress', 'R_stress']
 
-        self.meso_vars = dict.fromkeys(self.meso_vectors_strs)
+        self.meso_vars = dict.fromkeys(self.meso_scalars_strs + self.meso_r2tensors_strs)
 
         self.coefficient_strs = ["Gamma"]
         self.coefficients = dict.fromkeys(self.coefficient_strs)
@@ -4328,8 +4328,8 @@ class minitMHD_3D(object):
                 point = (t, *spatial_point)
                 index = (t_idx, *spatial_idx)
 
-                sampled_points.append(point)
-                sampled_indices_meso.append(index)
+                sampled_points.append(list(point))
+                sampled_indices_meso.append(list(index))
 
         # Run observer search
         micro_grid = self.micro_model.domain_vars['points']
@@ -4337,11 +4337,11 @@ class minitMHD_3D(object):
         successes, failures = self.find_obs.find_observers_parallel(micro_grid, micro_BC, sampled_points, n_cpus)
 
         # Store results
-        for i in range(len(successes[0])):
-            point_indxs_meso_grid = sampled_indices_meso[successes[0][i]]
-            self.filter_vars['U'][point_indxs_meso_grid] = successes[1][i]
-            self.filter_vars['U_errors'][point_indxs_meso_grid] = successes[2][i]
-            self.filter_vars['U_success'].update({(point_indxs_meso_grid): True})
+        for ii in range(len(successes[0])):
+            point_indxs_meso_grid = sampled_indices_meso[successes[0][ii]]
+            self.filter_vars['U'][tuple(point_indxs_meso_grid)] = successes[1][ii]
+            self.filter_vars['U_errors'][tuple(point_indxs_meso_grid)] = successes[2][ii]
+            self.filter_vars['U_success'].update({tuple(point_indxs_meso_grid): True})
 
         # Print failures
         if len(failures) != 0:
@@ -4409,7 +4409,7 @@ class minitMHD_3D(object):
             point_indxs_meso_grid = indices_meso_grid[positions[i]]
             self.meso_structures['BC'][point_indxs_meso_grid] = filtered_vars['BC'][i]
             # self.meso_structures['SET'][point_indxs_meso_grid] = filtered_vars['SET'][i]
-            self.meso_vars['Fab'][point_indxs_meso_grid] = filtered_vars['Fab'][i]
+            self.meso_structures['Fab'][point_indxs_meso_grid] = filtered_vars['Fab'][i]
 
     @staticmethod
     def compute_fluctuations_task(BCmicro, Fabmicro, U, Fab, h, i, j, k):
