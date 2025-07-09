@@ -1,0 +1,35 @@
+# CONFIGURATION FILE FOR SCRIPT pickling_minit3D
+################################################
+
+[Directories]
+
+hdf5_dir = /scratch/tc2m23/3D_tests/MHD/random3d/120^3/METHOD/FW2/ET_11
+
+pickled_files_dir = /scratch/tc2m23/3D_tests/MHD/random3d/120^3/pickled
+
+
+[Filenames] 
+
+meso_pickled_filename = /mesoET11_fw2_nt1_all
+
+micro_pickled_filename = /microET11_nt3
+
+[Micro_model_settings]
+
+snapshots_opts = {"fewer_snaps_required": true, 
+                "smaller_list": [0,2,4]}
+
+[Meso_model_settings]
+
+
+meso_grid_smart = {"num_T_slices": 1, "x_range": [0.04, 0.96], "y_range": [0.04, 0.96], 
+                    "z_range": [0.04, 0.96], "coarse_grain_factor": 2}
+
+filtering_options = {"box_len_ratio": 2.0, "filter_width_ratio": 2.0} 
+
+# slices_T_derivs = [0] 
+
+n_cpus = 40
+
+#set to 0 to avoid random selection
+random_selection = 0
