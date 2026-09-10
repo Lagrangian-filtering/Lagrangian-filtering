@@ -34,6 +34,36 @@ def make_tiny_model():
     return m
 
 
+def make_multisnapshot_model(nt=3):
+    """A ntx2x2x2 (t,x,y,z) grid with Bz varying linearly in time."""
+    m = IdealMHD_3D()
+    shape = (nt, 2, 2, 2)
+    m.domain_vars['nt'] = nt
+    m.domain_vars['nx'] = m.domain_vars['ny'] = m.domain_vars['nz'] = 2
+    m.domain_vars['dt'] = 1.0
+    m.domain_vars['dx'] = m.domain_vars['dy'] = m.domain_vars['dz'] = 0.5
+    m.domain_vars['t'] = np.arange(nt, dtype=float)
+
+    m.prim_vars['n'] = np.full(shape, 1.2)
+    m.prim_vars['p'] = np.full(shape, 0.3)
+    m.prim_vars['vx'] = np.full(shape, 0.1)
+    m.prim_vars['vy'] = np.full(shape, -0.05)
+    m.prim_vars['vz'] = np.full(shape, 0.02)
+    m.prim_vars['Bx'] = np.full(shape, 0.4)
+    m.prim_vars['By'] = np.full(shape, -0.3)
+    # Bz varies linearly in time: Bz = 0.2 + 0.1*t
+    Bz = np.zeros(shape)
+    for t_idx in range(nt):
+        Bz[t_idx, :, :, :] = 0.2 + 0.1 * t_idx
+    m.prim_vars['Bz'] = Bz
+
+    W = 1.0 / np.sqrt(1.0 - (0.1**2 + 0.05**2 + 0.02**2))
+    m.aux_vars['W'] = np.full(shape, W)
+    m.aux_vars['e'] = np.full(shape, 1.0)
+    m.aux_vars['h'] = np.full(shape, 1.0 + 4.0 / 3.0 * 0.3 / 1.2)
+    return m
+
+
 class TestIdealMHD3DStructures(unittest.TestCase):
     def setUp(self):
         self.m = make_tiny_model()
@@ -163,6 +193,41 @@ class TestIdealMHD3DStructures(unittest.TestCase):
         j_at_point = j[0, i0, i1, i2]
         np.testing.assert_allclose(
             j_at_point, [rho_expected, Jx_expected, Jy_expected, Jz_expected], atol=0.05)
+
+    def test_charge_current_multisnapshot_nt_greater_than_1(self):
+        """Regression test for nt>1 crash (Task 7): np.gradient axis tuple squeeze bug.
+
+        Before fix: np.gradient(F, t, axis=(0,)) returns a bare ndarray on
+        numpy 2.5.3 (single-element axis tuples are squeezed), not a
+        length-1 sequence, so `dFdt, = np.gradient(...)` raised ValueError
+        on every multi-snapshot dataset. This test builds an nt=3 model
+        with Bz varying linearly in time and asserts:
+        1. setup_structures() does not raise.
+        2. ChargeCurrent is finite everywhere.
+        3. The time-derivative contribution is present (dFdt is nonzero)
+           and structurally different from the nt=1 case, since Bz (and
+           hence FaradayTensor's spatial block) varies in time.
+        """
+        m = make_multisnapshot_model(nt=3)
+        m.setup_structures()
+
+        j = m.structures['ChargeCurrent']
+        self.assertEqual(j.shape, (3, 2, 2, 2, 4))
+        self.assertTrue(np.all(np.isfinite(j)))
+
+        # For comparison: compute the nt=1 (no time derivative) case
+        m_nt1 = make_tiny_model()
+        m_nt1.setup_structures()
+        j_nt1 = m_nt1.structures['ChargeCurrent']
+
+        # In the multi-snapshot case, the temporal gradient dFdt is nonzero
+        # because Bz varies. This makes the nt>1 ChargeCurrent structurally
+        # different from the static nt=1 case. Check that at least one
+        # element differs significantly (not just by floating-point rounding).
+        self.assertFalse(
+            np.allclose(j, j_nt1[0, ...], atol=1e-10),
+            msg="ChargeCurrent with nt>1 should differ from nt=1 case due to time derivative"
+        )
 
 
 if __name__ == '__main__':

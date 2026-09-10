@@ -700,7 +700,7 @@ class IdealMHD_3D(object):
         # Compute temporal gradient if we have multiple time steps
         if nt > 1:
             t = np.arange(nt) * self.domain_vars.get('dt', 1.0)
-            dFdt, = np.gradient(F, t, axis=(0,))
+            dFdt = np.gradient(F, t, axis=0)
         else:
             # Single time snapshot: time derivative is zero
             dFdt = np.zeros_like(F)
