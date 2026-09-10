@@ -48,9 +48,32 @@ class TestIdealMHD3DStructures(unittest.TestCase):
         B = np.array([0.4, -0.3, 0.2])
         E_expected = -np.cross(v, B)
         F = self.m.structures['FaradayTensor'][0, 0, 0, 0]
-        # F^{0i} = -E^i  =>  E^i = -F^{0i}
-        E_from_F = -F[0, 1:]
+        # F^{0i} = E^i (lab frame convention)
+        E_from_F = F[0, 1:]
         np.testing.assert_allclose(E_from_F, E_expected, atol=1e-12)
+
+    def test_ideal_mhd_condition_fluid_frame_E_vanishes(self):
+        """Verify ideal-MHD physical requirement: E_fluid = 0 in fluid frame."""
+        # Import Base for observer_frame_fields (system/BaseFunctionality.py)
+        from system.BaseFunctionality import Base
+
+        # Build fluid four-velocity from velocities and Lorentz factor
+        v = np.array([0.1, -0.05, 0.02])
+        W = self.m.aux_vars['W'][0, 0, 0, 0]
+        u_fluid = np.array([W, W * v[0], W * v[1], W * v[2]])
+
+        # Get Faraday tensor at this gridpoint
+        F = self.m.structures['FaradayTensor'][0, 0, 0, 0]
+
+        # Reconstruct lab-frame E and B for reference
+        B = np.array([0.4, -0.3, 0.2])
+        E = -np.cross(v, B)
+
+        # Transform Faraday tensor to fluid frame and extract E field
+        E_fluid_4 = Base.observer_frame_fields(F, u_fluid, self.m.metric)[0]
+
+        # Ideal MHD requires E_fluid to be zero (to machine precision ~1e-18, atol=1e-10 is safe margin)
+        np.testing.assert_allclose(E_fluid_4, 0.0, atol=1e-10)
 
     def test_set_em_matches_independent_maxwell_stress_formula(self):
         v = np.array([0.1, -0.05, 0.02])

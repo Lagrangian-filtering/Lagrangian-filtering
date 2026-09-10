@@ -671,7 +671,7 @@ class IdealMHD_3D(object):
         # --- EM structures: vectorized over the whole grid ---
         v = np.stack([self.prim_vars['vx'], self.prim_vars['vy'], self.prim_vars['vz']], axis=-1)
         B3 = np.stack([self.prim_vars['Bx'], self.prim_vars['By'], self.prim_vars['Bz']], axis=-1)
-        E3 = np.cross(v, B3)  # Sign convention for faraday_from_EB construction
+        E3 = -np.cross(v, B3)  # ideal Ohm's law: E = -v x B
 
         E4 = np.zeros(shape + (4,)); E4[..., 1:] = E3
         B4 = np.zeros(shape + (4,)); B4[..., 1:] = B3
