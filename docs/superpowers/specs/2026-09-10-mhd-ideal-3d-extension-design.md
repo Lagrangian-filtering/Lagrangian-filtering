@@ -73,7 +73,7 @@ with:
      definitional for `IdealMHD_3D`, not a fallback, since METHOD's `SRMHD` never
      stores `E`, confirmed empirically).
   2. `FaradayTensor` `F^{ab}` built **directly from the lab-frame `E,B`** via the flat
-     3+1 formula `F^{0i}=-E^i`, `F^{ij}=-ε^{ijk}B_k`. **This is deliberately not eq.
+     3+1 formula `F^{0i}=+E^i`, `F^{ij}=-ε^{ijk}B_k`. **This is deliberately not eq.
      619 evaluated with the fluid four-velocity `u^a`** — it is that same formula
      specialized to the lab/Eulerian observer `n^a=(1,0,0,0)`, because METHOD's `B^i`
      (primitive) and the `E^i` reconstructed above are lab-frame quantities, not
