@@ -77,6 +77,6 @@ if __name__ == '__main__':
     print('Ohms law closure fit ended: time taken= {}\n'.format(time.perf_counter() - start_time), flush=True)
 
     saving_directory = config['Directories']['pickled_files_dir']
-    meso_pickled_filename = config['Directories']['meso_pickled_filename']
+    meso_pickled_filename = config['Filenames']['meso_pickled_filename']
     with open(saving_directory + meso_pickled_filename, 'wb') as filehandle:
         pickle.dump(meso_model, filehandle)
