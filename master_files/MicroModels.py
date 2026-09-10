@@ -524,7 +524,193 @@ class IdealHD_3D(object):
         #         self.structures['bar_vel'][h,i,j,k] = result[0]
         #         self.structures['BC'][h,i,j,k] = result[1]
         #         self.structures['SET'][h,i,j,k] = result[2]
-                
 
 
 
+
+class IdealMHD_3D(object):
+    """
+    Micro model for 3D ideal-MHD simulation data (e.g. METHOD's SRMHD
+    solver). Mirrors IdealHD_3D's fluid handling exactly and adds the EM
+    structures needed for Sec. 6D covariant EM filtering: FaradayTensor,
+    ChargeCurrent, LorentzForceDensity, SET_EM.
+
+    METHOD's SRMHD output never stores E or j (ideal Ohm's law: E is
+    algebraic in v,B; j never appears in the ideal-MHD equations of
+    motion) -- both are reconstructed here, not read from file.
+    """
+
+    def __init__(self, interp_method="linear"):
+        self.spatial_dims = 3
+        self.interp_method = interp_method
+
+        self.metric = np.zeros((4, 4))
+        self.metric[0, 0] = -1
+        self.metric[1, 1] = self.metric[2, 2] = self.metric[3, 3] = +1
+
+        self.domain_int_strs = ('nt', 'nx', 'ny', 'nz')
+        self.domain_float_strs = ("tmin", "tmax", "xmin", "xmax", "ymin", "ymax", "zmin", "zmax", "dt", "dx", "dy", "dz")
+        self.domain_array_strs = ("t", "x", "y", "z", "points")
+        self.domain_vars = dict.fromkeys(self.domain_int_strs + self.domain_float_strs + self.domain_array_strs)
+        for str in self.domain_vars:
+            self.domain_vars[str] = []
+
+        self.prim_strs = ("vx", "vy", "vz", "n", "p", "Bx", "By", "Bz")
+        self.prim_vars = dict.fromkeys(self.prim_strs)
+        for str in self.prim_strs:
+            self.prim_vars[str] = []
+
+        self.aux_strs = ("W", "h", "e")
+        self.aux_vars = dict.fromkeys(self.aux_strs)
+        for str in self.aux_strs:
+            self.aux_vars[str] = []
+
+        self.structures_strs = ("BC", "SET", "bar_vel", "FaradayTensor", "ChargeCurrent", "LorentzForceDensity", "SET_EM")
+        self.structures = dict.fromkeys(self.structures_strs)
+        for str in self.structures_strs:
+            self.structures[str] = []
+
+        self.labels_var_dict = {
+            'BC': r'$n^{a}$', 'SET': r'$T_F^{ab}$', 'bar_vel': r'$u^a$',
+            'FaradayTensor': r'$F^{ab}$', 'ChargeCurrent': r'$j^{a}$',
+            'LorentzForceDensity': r'$j_aF^{ab}$', 'SET_EM': r'$T_{EM}^{ab}$',
+            'vx': r'$v_x$', 'vy': r'$v_y$', 'vz': r'$v_z$',
+            'Bx': r'$B_x$', 'By': r'$B_y$', 'Bz': r'$B_z$',
+            'n': r'$n$', 'W': r'$W$', 'e': r'$e$', 'h': r'$h$', 'p': r'$p$'}
+
+    def get_spatial_dims(self):
+        return self.spatial_dims
+
+    def get_model_name(self):
+        return 'Ideal MHD (3+1d)'
+
+    def get_domain_strs(self):
+        return self.domain_int_strs + self.domain_float_strs + self.domain_array_strs
+
+    def get_prim_strs(self):
+        return self.prim_strs
+
+    def get_aux_strs(self):
+        return self.aux_strs
+
+    def get_structures_strs(self):
+        return self.structures_strs
+
+    def get_all_var_strs(self):
+        return self.get_prim_strs() + self.get_aux_strs() + self.get_structures_strs()
+
+    def get_gridpoints(self):
+        return self.domain_vars['points']
+
+    def get_interpol_var(self, var, point):
+        if var in self.get_prim_strs():
+            return interpn(self.domain_vars['points'], self.prim_vars[var], point, method=self.interp_method)[0]
+        elif var in self.get_aux_strs():
+            return interpn(self.domain_vars['points'], self.aux_vars[var], point, method=self.interp_method)[0]
+        elif var in self.get_structures_strs():
+            return interpn(self.domain_vars['points'], self.structures[var], point, method=self.interp_method)[0]
+        else:
+            print(f'{var} is not a primitive, auxiliary variable or structure of the micro_model!!')
+
+    @multimethod
+    def get_var_gridpoint(self, var: str, h: object, i: object, j: object, k: object):
+        if var in self.get_prim_strs():
+            return self.prim_vars[var][h, i, j, k]
+        elif var in self.get_aux_strs():
+            return self.aux_vars[var][h, i, j, k]
+        elif var in self.get_structures_strs():
+            return self.structures[var][h, i, j, k]
+        else:
+            print('{} is not a variable of model {}'.format(var, self.get_model_name()))
+            return None
+
+    @multimethod
+    def get_var_gridpoint(self, var: str, point: object):
+        indices = Base.find_nearest_cell(point, self.domain_vars['points'])
+        if var in self.get_prim_strs():
+            return self.prim_vars[var][tuple(indices)]
+        elif var in self.get_aux_strs():
+            return self.aux_vars[var][tuple(indices)]
+        elif var in self.get_structures_strs():
+            return self.structures[var][tuple(indices)]
+        else:
+            print(f"{var} is not a variable of the model!")
+            return None
+
+    def setup_structures(self):
+        """
+        Sets up fluid structures exactly as IdealHD_3D does (BC, bar_vel,
+        SET -- fluid-only), then builds the EM structures on top:
+        FaradayTensor, ChargeCurrent, LorentzForceDensity, SET_EM.
+
+        All EM construction is vectorized over the whole grid (not a
+        per-gridpoint Python loop) since real target grids are millions
+        of points.
+        """
+        shape = self.prim_vars['n'].shape  # (Nt,Nx,Ny,Nz)
+
+        self.structures["BC"] = np.zeros(shape + (4,))
+        self.structures["bar_vel"] = np.zeros(shape + (4,))
+        self.structures["SET"] = np.zeros(shape + (4, 4))
+
+        for h in range(shape[0]):
+            for i in range(shape[1]):
+                for j in range(shape[2]):
+                    for k in range(shape[3]):
+                        vel_vec = np.array([
+                            self.aux_vars['W'][h, i, j, k],
+                            self.aux_vars['W'][h, i, j, k] * self.prim_vars['vx'][h, i, j, k],
+                            self.aux_vars['W'][h, i, j, k] * self.prim_vars['vy'][h, i, j, k],
+                            self.aux_vars['W'][h, i, j, k] * self.prim_vars['vz'][h, i, j, k]])
+                        self.structures['bar_vel'][h, i, j, k, :] = vel_vec
+                        self.structures['BC'][h, i, j, k, :] = np.multiply(self.prim_vars['n'][h, i, j, k], vel_vec)
+                        self.structures['SET'][h, i, j, k, :, :] = (
+                            (self.prim_vars['n'][h, i, j, k] * self.aux_vars['h'][h, i, j, k]) * np.outer(vel_vec, vel_vec)
+                            + self.prim_vars['p'][h, i, j, k] * self.metric)
+
+        # --- EM structures: vectorized over the whole grid ---
+        v = np.stack([self.prim_vars['vx'], self.prim_vars['vy'], self.prim_vars['vz']], axis=-1)
+        B3 = np.stack([self.prim_vars['Bx'], self.prim_vars['By'], self.prim_vars['Bz']], axis=-1)
+        E3 = np.cross(v, B3)  # Sign convention for faraday_from_EB construction
+
+        E4 = np.zeros(shape + (4,)); E4[..., 1:] = E3
+        B4 = np.zeros(shape + (4,)); B4[..., 1:] = B3
+        u_lab = np.array([1., 0., 0., 0.])  # lab/Eulerian observer -- NOT the fluid four-velocity
+
+        F = Base.faraday_from_EB(E4, B4, u_lab, self.metric)
+        self.structures['FaradayTensor'] = F
+
+        # ChargeCurrent: j^b = d_a F^{ab}, mu_0=1, via finite differences on the
+        # whole (t,x,y,z) grid. Accuracy of the time-derivative term is bounded
+        # by inter-snapshot spacing -- a data/config concern, not a bug here.
+        nt, nx, ny, nz = shape[0], shape[1], shape[2], shape[3]
+        x = np.arange(nx) * self.domain_vars['dx']
+        y = np.arange(ny) * self.domain_vars['dy']
+        z = np.arange(nz) * self.domain_vars['dz']
+
+        # Compute spatial gradients
+        dFdx, dFdy, dFdz = np.gradient(F, x, y, z, axis=(1, 2, 3))
+
+        # Compute temporal gradient if we have multiple time steps
+        if nt > 1:
+            t = np.arange(nt) * self.domain_vars.get('dt', 1.0)
+            dFdt, = np.gradient(F, t, axis=(0,))
+        else:
+            # Single time snapshot: time derivative is zero
+            dFdt = np.zeros_like(F)
+
+        j = dFdt[..., 0, :] + dFdx[..., 1, :] + dFdy[..., 2, :] + dFdz[..., 3, :]
+        self.structures['ChargeCurrent'] = j
+
+        j_lower = np.einsum('ab,...b->...a', self.metric, j)
+        self.structures['LorentzForceDensity'] = np.einsum('...a,...ab->...b', j_lower, F)
+
+        F_lower = np.einsum('ac,bd,...cd->...ab', self.metric, self.metric, F)
+        F_mixed = np.einsum('...bd,dc->...bc', F, self.metric)  # F^b_{~c}
+        term = np.einsum('...ac,...bc->...ab', F, F_mixed)
+        scalar = np.einsum('...cd,...cd->...', F_lower, F)
+        self.structures['SET_EM'] = term - 0.25 * np.einsum('ab,...->...ab', self.metric, scalar)
+
+        self.vars = self.prim_vars
+        self.vars.update(self.aux_vars)
+        self.vars.update(self.structures)
