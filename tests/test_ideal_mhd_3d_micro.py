@@ -87,29 +87,82 @@ class TestIdealMHD3DStructures(unittest.TestCase):
         np.testing.assert_allclose(SET_EM[1:, 1:], expected_spatial, atol=1e-10)
 
     def test_charge_current_recovers_known_gradient(self):
-        # Build a model where Bz varies linearly in x: Bz(x) = 0.2 + 0.1*x.
-        # Then F^{12} = -Bz(x) varies linearly in x, so d_x F^{12} is constant,
-        # and (for v=0, E=0) j^y = d_a F^{ay} = d_x F^{xy} = -d_x F^{12}... this
-        # test checks j is finite, grid-shaped, and non-zero only where a real
-        # gradient exists (not that it crashes on a uniform field, which
-        # trivially gives j=0 -- see next assertion for the non-trivial case).
+        """Quantitative ground-truth check for ChargeCurrent.
+
+        Finding C2 of the final whole-branch review: the previous version of
+        this test only asserted shape/finiteness/non-zero-ness, which is why
+        Finding C1 (ChargeCurrent summing over the wrong index of F, giving
+        exactly the negative of the physical (rho, J)) survived six prior
+        review gates. This version builds a synthetic v(x,y,z), B(x,y,z)
+        field with an analytically known div(E)/curl(B), computes the
+        expected (rho, Jx, Jy, Jz) independently via np.gradient directly on
+        the primitive field arrays (NOT by calling into IdealMHD_3D), and
+        checks ChargeCurrent against that ground truth at an interior point.
+        """
         m = self.m
-        shape = (1, 4, 2, 2)
-        m.domain_vars['nx'] = 4
-        for key in ('n', 'p', 'vx', 'vy', 'vz', 'By', 'Bx'):
-            m.prim_vars[key] = np.zeros(shape)
-        m.prim_vars['Bz'] = np.array([0.2 + 0.1 * i for i in range(4)])[None, :, None, None] * np.ones(shape)
+        n_pts = 5
+        d = 0.1
+        shape = (1, n_pts, n_pts, n_pts)
+        m.domain_vars['nx'] = m.domain_vars['ny'] = m.domain_vars['nz'] = n_pts
+        m.domain_vars['dx'] = m.domain_vars['dy'] = m.domain_vars['dz'] = d
+        m.domain_vars['dt'] = 1.0
+        m.domain_vars['t'] = np.array([0.0])
+
+        x = np.arange(n_pts) * d
+        y = np.arange(n_pts) * d
+        z = np.arange(n_pts) * d
+        X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+
+        # v = (0.2*y, 0, 0), B = (0.1*z, 0, 0.3+0.5*x) -> E = -v x B.
+        # Both v and B vary in space (so curl B and div E are non-zero), and
+        # every partial derivative relevant below is of a component that is
+        # affine in the differentiation variable, so central differencing is
+        # exact at interior points (no finite-difference truncation error to
+        # worry about here).
+        vx, vy, vz = 0.2 * Y, np.zeros_like(X), np.zeros_like(X)
+        Bx, By, Bz = 0.1 * Z, np.zeros_like(X), 0.3 + 0.5 * X
+
+        m.prim_vars['n'] = np.full(shape, 1.2)
+        m.prim_vars['p'] = np.full(shape, 0.3)
+        m.prim_vars['vx'] = vx[None, ...]
+        m.prim_vars['vy'] = vy[None, ...]
+        m.prim_vars['vz'] = vz[None, ...]
+        m.prim_vars['Bx'] = Bx[None, ...]
+        m.prim_vars['By'] = By[None, ...]
+        m.prim_vars['Bz'] = Bz[None, ...]
         m.aux_vars['W'] = np.ones(shape)
         m.aux_vars['e'] = np.ones(shape)
         m.aux_vars['h'] = np.ones(shape)
-        m.domain_vars['t'] = np.array([0.0])
 
         m.setup_structures()
         j = m.structures['ChargeCurrent']
         self.assertEqual(j.shape, shape + (4,))
         self.assertTrue(np.all(np.isfinite(j)))
-        # d/dx of a linear Bz is a nonzero constant -> j should be nonzero somewhere
-        self.assertFalse(np.allclose(j, 0.0))
+
+        # Independent ground truth: rho = div(E), J = curl(B) (dE/dt = 0
+        # since the field is static -- single time snapshot), computed via
+        # np.gradient directly on v/B, with no call into IdealMHD_3D.
+        v = np.stack([vx, vy, vz], axis=-1)
+        B = np.stack([Bx, By, Bz], axis=-1)
+        E = -np.cross(v, B)
+
+        dEx_dx, dEx_dy, dEx_dz = np.gradient(E[..., 0], x, y, z)
+        dEy_dx, dEy_dy, dEy_dz = np.gradient(E[..., 1], x, y, z)
+        dEz_dx, dEz_dy, dEz_dz = np.gradient(E[..., 2], x, y, z)
+
+        dBx_dx, dBx_dy, dBx_dz = np.gradient(Bx, x, y, z)
+        dBy_dx, dBy_dy, dBy_dz = np.gradient(By, x, y, z)
+        dBz_dx, dBz_dy, dBz_dz = np.gradient(Bz, x, y, z)
+
+        i0, i1, i2 = 2, 2, 2  # interior grid point, away from all boundaries
+        rho_expected = dEx_dx[i0, i1, i2] + dEy_dy[i0, i1, i2] + dEz_dz[i0, i1, i2]
+        Jx_expected = dBz_dy[i0, i1, i2] - dBy_dz[i0, i1, i2]
+        Jy_expected = dBx_dz[i0, i1, i2] - dBz_dx[i0, i1, i2]
+        Jz_expected = dBy_dx[i0, i1, i2] - dBx_dy[i0, i1, i2]
+
+        j_at_point = j[0, i0, i1, i2]
+        np.testing.assert_allclose(
+            j_at_point, [rho_expected, Jx_expected, Jy_expected, Jz_expected], atol=0.05)
 
 
 if __name__ == '__main__':

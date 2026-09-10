@@ -2594,7 +2594,7 @@ class resMHD_3D(resHD_3D):
 
         self.labels_var_dict.update({
             'FaradayTensor': r'$\langle F^{ab}\rangle$', 'ChargeCurrent': r'$\langle j^{a}\rangle$',
-            'LorentzForceDensity': r'$\langle j_aF^{ab}\rangle$',
+            'LorentzForceDensity': r'$\langle -j_aF^{ab}\rangle$',
             'sigma_tilde': r'$\tilde{\sigma}$', 'E_tilde': r'$\tilde{E}^a$', 'B_tilde': r'$\tilde{B}^a$',
             'J_tilde': r'$\tilde{J}^a$', 'F_closure': r'$\mathcal{F}^b$', 'Ohm_res': r'$\mathcal{W}^a$',
             'R_tilde': r'$\tilde{R}$', 'alpha_dynamo': r'$\alpha$', 'gamma_hall': r'$\gamma$'})
@@ -2675,9 +2675,10 @@ class resMHD_3D(resHD_3D):
         u_t: ndarray (4,) -- Favre observer, from decompose_structures_task
         F_filt: ndarray (4,4) -- <F^{ab}>
         j_filt: ndarray (4,) -- <j^a>
-        lorentz_filt: ndarray (4,) -- <j_aF^{ab}> (filtered as ITS OWN
-            micro-scale structure, not reconstructed from separately
-            filtered j and F -- see mhd_filtering_extension.md Sec 3.5.3)
+        lorentz_filt: ndarray (4,) -- <-j_aF^{ab}> (the physical Lorentz
+            4-force density, filtered as ITS OWN micro-scale structure, not
+            reconstructed from separately filtered j and F -- see
+            mhd_filtering_extension.md Sec 3.5.3)
         metric: ndarray (4,4)
 
         Returns
@@ -2690,8 +2691,15 @@ class resMHD_3D(resHD_3D):
         h_ab = np.einsum('ij,jk->ik', metric + np.einsum('i,j->ij', u_t, u_t), metric)
         J_tilde = np.einsum('ab,b->a', h_ab, j_filt)
 
+        # F_closure = <f^b> - f_tilde^b_recon, the closure residual between the
+        # filtered physical Lorentz force density and its mean-field
+        # reconstruction from the filtered current and field (f = -j_aF^{ab},
+        # so f_tilde^b_recon = -J_tilde_a F_filt^{ab}, hence the '+' below).
+        # lorentz_filt already stores the filtered PHYSICAL force -j_aF^{ab}
+        # (see MicroModels.IdealMHD_3D.setup_structures), so no extra minus
+        # sign is applied to it here.
         J_tilde_lower = np.einsum('ab,b->a', metric, J_tilde)
-        F_closure = -lorentz_filt + np.einsum('a,ab->b', J_tilde_lower, F_filt)
+        F_closure = lorentz_filt + np.einsum('a,ab->b', J_tilde_lower, F_filt)
 
         return E_tilde, B_tilde, sigma_tilde, J_tilde, F_closure
 
@@ -2764,7 +2772,18 @@ class resMHD_3D(resHD_3D):
         n = len(operators)
         G = np.array([[Base.Mink_dot(operators[p], operators[q]) for q in range(n)] for p in range(n)])
         b = np.array([Base.Mink_dot(operators[p], E_tilde) for p in range(n)])
-        solved = np.linalg.solve(G, b)
+        # Use lstsq rather than solve: G is singular (or near-singular)
+        # whenever the enabled operators are linearly dependent (e.g. J_tilde
+        # parallel to B_tilde makes the Hall operator vanish identically --
+        # this happens in ordinary force-free/low-beta MHD regions, not just
+        # pathological inputs) or one of them is exactly zero (B_tilde=0,
+        # J_tilde=0). np.linalg.solve raises LinAlgError on a singular G,
+        # which would abort the whole-grid fit at the first such gridpoint.
+        # lstsq handles this gracefully via the minimum-norm least-squares
+        # solution -- consistent with this already being a least-squares fit
+        # -- giving a well-defined answer along the non-degenerate directions
+        # instead of giving up entirely.
+        solved, *_ = np.linalg.lstsq(G, b, rcond=None)
 
         for name, value in zip(names, solved):
             coeffs[name] = value

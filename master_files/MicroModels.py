@@ -573,7 +573,7 @@ class IdealMHD_3D(object):
         self.labels_var_dict = {
             'BC': r'$n^{a}$', 'SET': r'$T_F^{ab}$', 'bar_vel': r'$u^a$',
             'FaradayTensor': r'$F^{ab}$', 'ChargeCurrent': r'$j^{a}$',
-            'LorentzForceDensity': r'$j_aF^{ab}$', 'SET_EM': r'$T_{EM}^{ab}$',
+            'LorentzForceDensity': r'$-j_aF^{ab}$', 'SET_EM': r'$T_{EM}^{ab}$',
             'vx': r'$v_x$', 'vy': r'$v_y$', 'vz': r'$v_z$',
             'Bx': r'$B_x$', 'By': r'$B_y$', 'Bz': r'$B_z$',
             'n': r'$n$', 'W': r'$W$', 'e': r'$e$', 'h': r'$h$', 'p': r'$p$'}
@@ -680,9 +680,15 @@ class IdealMHD_3D(object):
         F = Base.faraday_from_EB(E4, B4, u_lab, self.metric)
         self.structures['FaradayTensor'] = F
 
-        # ChargeCurrent: j^b = d_a F^{ab}, mu_0=1, via finite differences on the
+        # ChargeCurrent: j^b = d_a F^{ba}, mu_0=1, via finite differences on the
         # whole (t,x,y,z) grid. Accuracy of the time-derivative term is bounded
         # by inter-snapshot spacing -- a data/config concern, not a bug here.
+        # NOTE: the divergence must land on the SECOND index of F (i.e. we sum
+        # d/dx^a of F^{ba}, holding the free index b as F's FIRST index). Summing
+        # over F's first index instead (j^b = d_a F^{ab}) gives exactly the
+        # negative of the physical (rho, J) -- verified numerically against an
+        # independent div(E)/curl(B) ground truth (see
+        # tests/test_ideal_mhd_3d_micro.py::test_charge_current_recovers_known_gradient).
         nt, nx, ny, nz = shape[0], shape[1], shape[2], shape[3]
         x = np.arange(nx) * self.domain_vars['dx']
         y = np.arange(ny) * self.domain_vars['dy']
@@ -699,11 +705,16 @@ class IdealMHD_3D(object):
             # Single time snapshot: time derivative is zero
             dFdt = np.zeros_like(F)
 
-        j = dFdt[..., 0, :] + dFdx[..., 1, :] + dFdy[..., 2, :] + dFdz[..., 3, :]
+        j = dFdt[..., :, 0] + dFdx[..., :, 1] + dFdy[..., :, 2] + dFdz[..., :, 3]
         self.structures['ChargeCurrent'] = j
 
+        # LorentzForceDensity: physical Lorentz 4-force density f^b = -j_a F^{ab}
+        # (equivalently F^{ba} j_a), matching f^0 = J.E (power) and the spatial
+        # part rho*E + J x B -- verified numerically against that independent
+        # ground truth. NOTE: j_a F^{ab} (no leading minus) is the NEGATIVE of
+        # this physical quantity, since F is antisymmetric.
         j_lower = np.einsum('ab,...b->...a', self.metric, j)
-        self.structures['LorentzForceDensity'] = np.einsum('...a,...ab->...b', j_lower, F)
+        self.structures['LorentzForceDensity'] = -np.einsum('...a,...ab->...b', j_lower, F)
 
         F_lower = np.einsum('ac,bd,...cd->...ab', self.metric, self.metric, F)
         F_mixed = np.einsum('...bd,dc->...bc', F, self.metric)  # F^b_{~c}
