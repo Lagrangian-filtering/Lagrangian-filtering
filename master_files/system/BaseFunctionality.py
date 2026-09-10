@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import random
 from scipy import fft
+from itertools import permutations
 
 class Base(object):
     """
@@ -59,6 +60,110 @@ class Base(object):
         """
         W = 1 / np.sqrt(1-np.sum(spatial_vels**2))
         return W * np.insert(spatial_vels,0,1.0)
+
+    @staticmethod
+    def LeviCivita4D():
+        """
+        Returns the 4D Levi-Civita symbol epsilon_{abcd} as a (4,4,4,4) ndarray,
+        with epsilon_{0123} = +1 and epsilon_{abcd} = 0 whenever any two
+        indices repeat.
+        """
+        eps = np.zeros((4, 4, 4, 4))
+        for perm in permutations(range(4)):
+            sign = 1
+            p = list(perm)
+            for x in range(4):
+                for y in range(x + 1, 4):
+                    if p[x] > p[y]:
+                        sign *= -1
+            eps[perm] = sign
+        return eps
+
+    @staticmethod
+    def raise_LeviCivita4D(metric):
+        """
+        Returns epsilon^{abcd}, i.e. LeviCivita4D() with all four indices
+        raised via 'metric' (valid because a diagonal +/-1 Minkowski metric
+        is its own inverse).
+        """
+        eps_lower = Base.LeviCivita4D()
+        return np.einsum('ae,bf,cg,dh,efgh->abcd', metric, metric, metric, metric, eps_lower)
+
+    @staticmethod
+    def dual_tensor(F_upper, metric):
+        """
+        Returns the Hodge dual *F^{ab} = (1/2) epsilon^{abcd} F_{cd} of a
+        fully-contravariant, antisymmetric rank-2 tensor F^{ab}.
+
+        Parameters
+        ----------
+        F_upper: ndarray, shape (...,4,4)
+            One tensor (4,4) or a grid-batch of tensors with arbitrary
+            leading dimensions.
+        metric: ndarray, shape (4,4)
+
+        Returns
+        -------
+        ndarray, same shape as F_upper
+        """
+        F_lower = np.einsum('ac,bd,...cd->...ab', metric, metric, F_upper)
+        levi_upper = Base.raise_LeviCivita4D(metric)
+        return 0.5 * np.einsum('abcd,...cd->...ab', levi_upper, F_lower)
+
+    @staticmethod
+    def faraday_from_EB(E, B, u, metric):
+        """
+        Builds the fully-contravariant Faraday tensor
+            F^{ab} = u^a E^b - u^b E^a + epsilon^{abcd} u_c B_d
+        from the electric/magnetic field 4-vectors E^a, B^a measured by
+        observer u^a (each must be orthogonal to u^a) and mu_0=1.
+        This is the exact inverse of observer_frame_fields() below.
+
+        Parameters
+        ----------
+        E, B, u: ndarray, shape (...,4), broadcastable against each other
+        metric: ndarray, shape (4,4)
+
+        Returns
+        -------
+        ndarray, shape (...,4,4)
+        """
+        term1 = np.einsum('...a,...b->...ab', u, E) - np.einsum('...a,...b->...ab', E, u)
+        u_lower = np.einsum('ab,...b->...a', metric, u)
+        levi_upper = Base.raise_LeviCivita4D(metric)
+        term2 = np.einsum('abcd,...c,...d->...ab', levi_upper, u_lower, B)
+        return term1 + term2
+
+    @staticmethod
+    def observer_frame_fields(F_upper, u, metric):
+        """
+        Decomposes a fully-contravariant Faraday tensor F^{ab} into the
+        electric/magnetic field 4-vectors measured by observer u^a
+        (mostly-plus metric, mu_0=1), following the standard GRMHD
+        decomposition (e.g. Rezzolla & Zanotti, "Relativistic
+        Hydrodynamics", Sec. 2.4):
+
+            E^a = F^{ab} u_b
+            B^a = -u_b (*F)^{ab}
+
+        Both come out orthogonal to u^a automatically. This is the exact
+        inverse of faraday_from_EB() above.
+
+        Parameters
+        ----------
+        F_upper: ndarray, shape (...,4,4)
+        u: ndarray, shape (...,4), broadcastable against F_upper's batch dims
+        metric: ndarray, shape (4,4)
+
+        Returns
+        -------
+        (E, B): each ndarray, shape (...,4)
+        """
+        u_lower = np.einsum('ab,...b->...a', metric, u)
+        E = np.einsum('...ab,...b->...a', F_upper, u_lower)
+        F_dual = Base.dual_tensor(F_upper, metric)
+        B = -np.einsum('...ab,...b->...a', F_dual, u_lower)
+        return E, B
 
     """
     A pair of functions that work in conjuction (thank you stack overflow).
