@@ -27,8 +27,10 @@ snapshots_opts = {"fewer_snaps_required": true,
 
 [Meso_model_settings]
 
-meso_grid = {"x_range": [0.03, 0.97], "y_range": [0.03, 0.97], "num_T_slices": 3, 
+meso_grid = {"x_range": [0.03, 0.97], "y_range": [0.03, 0.97], "num_T_slices": 3,
             "coarse_grain_factor": 1, "coarse_grain_time": false}
+
+meso_grid_smart = {"x_range": [0.03, 0.97], "y_range": [0.03, 0.97], "z_range": [0.03, 0.97], "num_T_slices": 3, "coarse_grain_factor": 1}
 
 filtering_options = {"box_len_ratio": 8.0, "filter_width_ratio": 2.0}
 
