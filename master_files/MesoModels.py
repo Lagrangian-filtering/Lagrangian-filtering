@@ -2726,4 +2726,78 @@ class resMHD_3D(resHD_3D):
     @staticmethod
     def _decompose_EM_task_pool(u_t, F_filt, j_filt, lorentz_filt, metric, h, i, j, k):
         E, B, sigma, J, F_closure = resMHD_3D.decompose_EM_task(u_t, F_filt, j_filt, lorentz_filt, metric)
-        return E, B, sigma, J, F_closure, h, i, j, k 
+        return E, B, sigma, J, F_closure, h, i, j, k
+
+    @staticmethod
+    def ohms_law_fit_gridpoint(E_tilde, J_tilde, B_tilde, u_tilde, metric,
+                                use_resistive=True, use_dynamo=True, use_hall=True):
+        """
+        Fits the generic Ohm's law closure at a single meso gridpoint:
+
+            E_tilde^a = R_tilde*J_tilde^a + alpha*B_tilde^a + gamma*Hall^a + Ohm_res^a
+
+        where Hall^a = epsilon^{abcd} J_tilde_b u_tilde_c B_tilde_d. Each
+        term is switched on/off independently via its use_* flag; a
+        disabled term's coefficient is returned as np.nan (never 0.0), and
+        its contribution stays folded into Ohm_res rather than being
+        silently absorbed by the remaining terms.
+
+        Returns
+        -------
+        (R_tilde, alpha_dynamo, gamma_hall, Ohm_res): float, float, float, ndarray(4,)
+        """
+        names, operators = [], []
+        if use_resistive:
+            names.append('R_tilde'); operators.append(J_tilde)
+        if use_dynamo:
+            names.append('alpha_dynamo'); operators.append(B_tilde)
+        if use_hall:
+            levi_upper = Base.raise_LeviCivita4D(metric)
+            hall = np.einsum('abcd,b,c,d->a', levi_upper, J_tilde, u_tilde, B_tilde)
+            names.append('gamma_hall'); operators.append(hall)
+
+        coeffs = {'R_tilde': np.nan, 'alpha_dynamo': np.nan, 'gamma_hall': np.nan}
+
+        if len(operators) == 0:
+            return coeffs['R_tilde'], coeffs['alpha_dynamo'], coeffs['gamma_hall'], np.array(E_tilde, dtype=float)
+
+        n = len(operators)
+        G = np.array([[Base.Mink_dot(operators[p], operators[q]) for q in range(n)] for p in range(n)])
+        b = np.array([Base.Mink_dot(operators[p], E_tilde) for p in range(n)])
+        solved = np.linalg.solve(G, b)
+
+        for name, value in zip(names, solved):
+            coeffs[name] = value
+
+        residual = np.array(E_tilde, dtype=float)
+        for name, op in zip(names, operators):
+            residual = residual - coeffs[name] * op
+
+        return coeffs['R_tilde'], coeffs['alpha_dynamo'], coeffs['gamma_hall'], residual
+
+    def fit_ohms_law_closure(self, use_resistive=True, use_dynamo=True, use_hall=True):
+        """
+        Runs ohms_law_fit_gridpoint at every meso gridpoint, storing
+        results in meso_vars['R_tilde'/'alpha_dynamo'/'gamma_hall'/'Ohm_res'].
+        Requires decompose_EM_parallel() and decompose_structures_parallel()
+        (for u_tilde) to have been run first. Not parallelized: the
+        per-point linear system is at most 3x3, and meso grids are
+        coarse-grained (orders of magnitude fewer points than the micro
+        grid), so a plain loop is fast enough here.
+        """
+        Nt, Nx, Ny, Nz = self.domain_vars['Nt'], self.domain_vars['Nx'], self.domain_vars['Ny'], self.domain_vars['Nz']
+        for h in range(Nt):
+            for i in range(Nx):
+                for j in range(Ny):
+                    for k in range(Nz):
+                        R, alpha, gamma, res = resMHD_3D.ohms_law_fit_gridpoint(
+                            self.meso_vars['E_tilde'][h, i, j, k],
+                            self.meso_vars['J_tilde'][h, i, j, k],
+                            self.meso_vars['B_tilde'][h, i, j, k],
+                            self.meso_vars['u_tilde'][h, i, j, k],
+                            self.metric,
+                            use_resistive=use_resistive, use_dynamo=use_dynamo, use_hall=use_hall)
+                        self.meso_vars['R_tilde'][h, i, j, k] = R
+                        self.meso_vars['alpha_dynamo'][h, i, j, k] = alpha
+                        self.meso_vars['gamma_hall'][h, i, j, k] = gamma
+                        self.meso_vars['Ohm_res'][h, i, j, k, :] = res 
