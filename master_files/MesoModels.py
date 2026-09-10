@@ -2565,5 +2565,165 @@ class resHD_3D(object):
                                 for str in self.nonlocal_vars_strs: 
                                     dstr = 'D_' + str 
                                     self.deriv_vars[dstr][h,i,j,k,dir] = self.calculate_derivatives_gridpoint(str, h, i, j, k, dir, order=order) 
-                        else: 
-                            print('Derivatives not calculated at {}: observer could not be found.'.format(point)) 
+                        else:
+                            print('Derivatives not calculated at {}: observer could not be found.'.format(point))
+
+
+class resMHD_3D(resHD_3D):
+    """
+    Meso model for 3D ideal-MHD filtering (Sec. 6D). Subclasses resHD_3D
+    to reuse fluid grid setup/filtering/decomposition/derivatives
+    unchanged, adding only the EM structures, EM decomposition, and the
+    generic Ohm's-law closure (see fit_ohms_law_closure).
+    """
+
+    def __init__(self, micro_model, find_obs, filter, interp_method='linear'):
+        super().__init__(micro_model, find_obs, filter, interp_method)
+
+        self.meso_structures_strs = self.meso_structures_strs + ['FaradayTensor', 'ChargeCurrent', 'LorentzForceDensity']
+        for var in ('FaradayTensor', 'ChargeCurrent', 'LorentzForceDensity'):
+            self.meso_structures[var] = []
+
+        em_scalars = ['sigma_tilde', 'R_tilde', 'alpha_dynamo', 'gamma_hall']
+        em_vectors = ['E_tilde', 'B_tilde', 'J_tilde', 'F_closure', 'Ohm_res']
+        self.meso_scalars_strs = self.meso_scalars_strs + em_scalars
+        self.meso_vectors_strs = self.meso_vectors_strs + em_vectors
+        self.meso_vars_strs = self.meso_scalars_strs + self.meso_vectors_strs + self.meso_r2tensors_strs
+        for var in em_scalars + em_vectors:
+            self.meso_vars[var] = []
+
+        self.labels_var_dict.update({
+            'FaradayTensor': r'$\langle F^{ab}\rangle$', 'ChargeCurrent': r'$\langle j^{a}\rangle$',
+            'LorentzForceDensity': r'$\langle j_aF^{ab}\rangle$',
+            'sigma_tilde': r'$\tilde{\sigma}$', 'E_tilde': r'$\tilde{E}^a$', 'B_tilde': r'$\tilde{B}^a$',
+            'J_tilde': r'$\tilde{J}^a$', 'F_closure': r'$\mathcal{F}^b$', 'Ohm_res': r'$\mathcal{W}^a$',
+            'R_tilde': r'$\tilde{R}$', 'alpha_dynamo': r'$\alpha$', 'gamma_hall': r'$\gamma$'})
+
+    def get_model_name(self):
+        return 'resMHD_3D'
+
+    def setup_meso_grid(self, patch_bdrs, coarse_factor=1, coarse_time=False):
+        super().setup_meso_grid(patch_bdrs, coarse_factor, coarse_time)
+        Nt, Nx, Ny, Nz = self.domain_vars['Nt'], self.domain_vars['Nx'], self.domain_vars['Ny'], self.domain_vars['Nz']
+        for var in ('FaradayTensor',):
+            self.meso_structures[var] = np.zeros((Nt, Nx, Ny, Nz, 4, 4))
+        for var in ('ChargeCurrent', 'LorentzForceDensity'):
+            self.meso_structures[var] = np.zeros((Nt, Nx, Ny, Nz, 4))
+        for var in ('sigma_tilde', 'R_tilde', 'alpha_dynamo', 'gamma_hall'):
+            self.meso_vars[var] = np.zeros((Nt, Nx, Ny, Nz))
+        for var in ('E_tilde', 'B_tilde', 'J_tilde', 'F_closure', 'Ohm_res'):
+            self.meso_vars[var] = np.zeros((Nt, Nx, Ny, Nz, 4))
+
+    def setup_mesogrid_smart(self, num_T_slices, spatial_bdrs, coarse_factor):
+        super().setup_mesogrid_smart(num_T_slices, spatial_bdrs, coarse_factor)
+        Nt, Nx, Ny, Nz = self.domain_vars['Nt'], self.domain_vars['Nx'], self.domain_vars['Ny'], self.domain_vars['Nz']
+        for var in ('FaradayTensor',):
+            self.meso_structures[var] = np.zeros((Nt, Nx, Ny, Nz, 4, 4))
+        for var in ('ChargeCurrent', 'LorentzForceDensity'):
+            self.meso_structures[var] = np.zeros((Nt, Nx, Ny, Nz, 4))
+        for var in ('sigma_tilde', 'R_tilde', 'alpha_dynamo', 'gamma_hall'):
+            self.meso_vars[var] = np.zeros((Nt, Nx, Ny, Nz))
+        for var in ('E_tilde', 'B_tilde', 'J_tilde', 'F_closure', 'Ohm_res'):
+            self.meso_vars[var] = np.zeros((Nt, Nx, Ny, Nz, 4))
+
+    def filter_micro_vars_parallel(self, n_cpus):
+        """
+        Same as resHD_3D.filter_micro_vars_parallel, extended with the
+        three new EM structures. Reimplemented (not calling super) because
+        the base method's 'vars' list is a local literal, not an
+        overridable attribute.
+        """
+        from itertools import product
+        ts, xs, ys, zs = self.domain_vars['T'], self.domain_vars['X'], self.domain_vars['Y'], self.domain_vars['Z']
+        t_idxs, x_idxs, y_idxs, z_idxs = np.arange(len(ts)), np.arange(len(xs)), np.arange(len(ys)), np.arange(len(zs))
+
+        points = [list(elem) for elem in product(ts, xs, ys, zs)]
+        indices_meso_grid = list(product(t_idxs, x_idxs, y_idxs, z_idxs))
+
+        observers = []
+        for elem in indices_meso_grid:
+            if self.filter_vars['U_success'][elem]:
+                observers.append(self.filter_vars['U'][elem])
+            else:
+                print('Observers are not computed on (parts of) the grid!')
+                return None
+
+        vars = ['BC', 'SET', 'p', 'FaradayTensor', 'ChargeCurrent', 'LorentzForceDensity']
+        points_observers = [[points[i], observers[i]] for i in range(len(points))]
+
+        filtered_vars = dict.fromkeys(vars)
+        for var in vars:
+            positions, filtered_vars[var] = self.filter.filter_var_parallel(points_observers, var, n_cpus)
+
+        for i in range(len(positions)):
+            idx = indices_meso_grid[positions[i]]
+            self.meso_structures['BC'][idx] = filtered_vars['BC'][i]
+            self.meso_structures['SET'][idx] = filtered_vars['SET'][i]
+            self.meso_vars['p_filt'][idx] = filtered_vars['p'][i]
+            self.meso_structures['FaradayTensor'][idx] = filtered_vars['FaradayTensor'][i]
+            self.meso_structures['ChargeCurrent'][idx] = filtered_vars['ChargeCurrent'][i]
+            self.meso_structures['LorentzForceDensity'][idx] = filtered_vars['LorentzForceDensity'][i]
+
+    @staticmethod
+    def decompose_EM_task(u_t, F_filt, j_filt, lorentz_filt, metric):
+        """
+        Decomposes the filtered EM structures at a single meso gridpoint,
+        given the already-computed fluid Favre observer u_t.
+
+        Parameters
+        ----------
+        u_t: ndarray (4,) -- Favre observer, from decompose_structures_task
+        F_filt: ndarray (4,4) -- <F^{ab}>
+        j_filt: ndarray (4,) -- <j^a>
+        lorentz_filt: ndarray (4,) -- <j_aF^{ab}> (filtered as ITS OWN
+            micro-scale structure, not reconstructed from separately
+            filtered j and F -- see mhd_filtering_extension.md Sec 3.5.3)
+        metric: ndarray (4,4)
+
+        Returns
+        -------
+        (E_tilde, B_tilde, sigma_tilde, J_tilde, F_closure)
+        """
+        E_tilde, B_tilde = Base.observer_frame_fields(F_filt, u_t, metric)
+
+        sigma_tilde = -Base.Mink_dot(u_t, j_filt)
+        h_ab = np.einsum('ij,jk->ik', metric + np.einsum('i,j->ij', u_t, u_t), metric)
+        J_tilde = np.einsum('ab,b->a', h_ab, j_filt)
+
+        J_tilde_lower = np.einsum('ab,b->a', metric, J_tilde)
+        F_closure = -lorentz_filt + np.einsum('a,ab->b', J_tilde_lower, F_filt)
+
+        return E_tilde, B_tilde, sigma_tilde, J_tilde, F_closure
+
+    def decompose_EM_parallel(self, n_cpus):
+        """
+        Runs decompose_EM_task at every meso gridpoint. Requires
+        decompose_structures_parallel() to have been run first (needs
+        u_tilde).
+        """
+        args_for_pool = []
+        for h in range(len(self.domain_vars['T'])):
+            for i in range(len(self.domain_vars['X'])):
+                for j in range(len(self.domain_vars['Y'])):
+                    for k in range(len(self.domain_vars['Z'])):
+                        args_for_pool.append((
+                            self.meso_vars['u_tilde'][h, i, j, k],
+                            self.meso_structures['FaradayTensor'][h, i, j, k],
+                            self.meso_structures['ChargeCurrent'][h, i, j, k],
+                            self.meso_structures['LorentzForceDensity'][h, i, j, k],
+                            self.metric, h, i, j, k))
+
+        with mp.Pool(processes=n_cpus) as pool:
+            print('Decomposing EM structures in parallel with {} processes'.format(pool._processes), flush=True)
+            results = pool.starmap(resMHD_3D._decompose_EM_task_pool, args_for_pool)
+            for E, B, sigma, J, F_closure, h, i, j, k in results:
+                self.meso_vars['E_tilde'][h, i, j, k] = E
+                self.meso_vars['B_tilde'][h, i, j, k] = B
+                self.meso_vars['sigma_tilde'][h, i, j, k] = sigma
+                self.meso_vars['J_tilde'][h, i, j, k] = J
+                self.meso_vars['F_closure'][h, i, j, k] = F_closure
+
+    @staticmethod
+    def _decompose_EM_task_pool(u_t, F_filt, j_filt, lorentz_filt, metric, h, i, j, k):
+        E, B, sigma, J, F_closure = resMHD_3D.decompose_EM_task(u_t, F_filt, j_filt, lorentz_filt, metric)
+        return E, B, sigma, J, F_closure, h, i, j, k 
