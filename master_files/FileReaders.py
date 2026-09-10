@@ -283,32 +283,32 @@ class METHOD_HDF5(object):
                 if dom_var_str == 'nt': 
                     pass
                 else: 
-                    micro_model.domain_vars[dom_var_str] = int( self.hdf5_files[0]['Domain/' + dom_var_str][:])
-            except KeyError: 
-                print(f'{dom_var_str} is not in the hdf5 dataset: check Domain/')
+                    micro_model.domain_vars[dom_var_str] = int(self.hdf5_files[0]['Domain'].attrs[dom_var_str])
+            except KeyError:
+                print(f'{dom_var_str} is not in the hdf5 Domain group attributes')
 
-        for dom_var_str in micro_model.domain_float_strs: 
-            try: 
-                if dom_var_str in ['tmin', 'tmax']: 
+        for dom_var_str in micro_model.domain_float_strs:
+            try:
+                if dom_var_str in ['tmin', 'tmax']:
                     pass
-                else: 
-                    micro_model.domain_vars[dom_var_str] = float( self.hdf5_files[0]['Domain/' + dom_var_str][:])
-            except KeyError: 
-                print(f'{dom_var_str} is not in the hdf5 dataset: check Domain/')
+                else:
+                    micro_model.domain_vars[dom_var_str] = float(self.hdf5_files[0]['Domain'].attrs[dom_var_str])
+            except KeyError:
+                print(f'{dom_var_str} is not in the hdf5 Domain group attributes')
 
-        for dom_var_str in micro_model.domain_array_strs: 
-            try: 
-                if dom_var_str in ['t','points', 'x', 'y', 'z']: 
+        for dom_var_str in micro_model.domain_array_strs:
+            try:
+                if dom_var_str in ['t','points', 'x', 'y', 'z']:
                     pass
-                else: 
+                else:
                     micro_model.domain_vars[dom_var_str] = self.hdf5_files[0]['Domain/' + dom_var_str][:]
-            except KeyError: 
+            except KeyError:
                 print(f'{dom_var_str} is not in the hdf5 dataset: check Domain/')
 
 
         micro_model.domain_vars['nt'] = self.num_files
         for counter in range(self.num_files):
-            micro_model.domain_vars['t'].append( float(self.hdf5_files[counter]['Domain/endTime'][:]))
+            micro_model.domain_vars['t'].append(float(self.hdf5_files[counter]['Domain'].attrs['endTime']))
 
         micro_model.domain_vars['x'] = np.zeros(micro_model.domain_vars['nx'])
         for i in range(len(micro_model.domain_vars['x'])):
