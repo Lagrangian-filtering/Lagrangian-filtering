@@ -34,6 +34,12 @@ filtering_options = {"box_len_ratio": 8.0, "filter_width_ratio": 2.0}
 
 n_cpus = 40
 
+[Ohms_law_settings]
+
+# Each term of the generic Ohm's law closure (E~ = R~*J~ + alpha*B~ + gamma*Hall + Ohm_res)
+# can be switched on/off independently.
+terms = {"resistive": true, "dynamo": true, "hall": true}
+
 
 [Plot_settings]
 # method sets that used for producing difference plots: set it to 'interpolate' when plotting models with different grids
