@@ -25,13 +25,14 @@ class TestReadInData3DDomainAttrs(unittest.TestCase):
         shape = (2, 2, 2)
         with h5py.File(path, 'w') as f:
             dom = f.create_group('Domain')
-            dom.attrs['nx'] = shape[0]
-            dom.attrs['ny'] = shape[1]
-            dom.attrs['nz'] = shape[2]
+            # METHOD writes attributes as shape-(1,) arrays (H5LTset_attribute_*, size 1)
+            dom.attrs['nx'] = np.array([shape[0]])
+            dom.attrs['ny'] = np.array([shape[1]])
+            dom.attrs['nz'] = np.array([shape[2]])
             for name, val in [('xmin', 0.0), ('xmax', 1.0), ('ymin', 0.0), ('ymax', 1.0),
                                ('zmin', 0.0), ('zmax', 1.0), ('dx', 0.5), ('dy', 0.5), ('dz', 0.5)]:
-                dom.attrs[name] = val
-            dom.attrs['endTime'] = t
+                dom.attrs[name] = np.array([val])
+            dom.attrs['endTime'] = np.array([t])
 
             prim = f.create_group('Primitive')
             aux = f.create_group('Auxiliary')

@@ -283,7 +283,7 @@ class METHOD_HDF5(object):
                 if dom_var_str == 'nt': 
                     pass
                 else: 
-                    micro_model.domain_vars[dom_var_str] = int(self.hdf5_files[0]['Domain'].attrs[dom_var_str])
+                    micro_model.domain_vars[dom_var_str] = int(np.ravel(self.hdf5_files[0]['Domain'].attrs[dom_var_str])[0])
             except KeyError:
                 print(f'{dom_var_str} is not in the hdf5 Domain group attributes')
 
@@ -292,7 +292,7 @@ class METHOD_HDF5(object):
                 if dom_var_str in ['tmin', 'tmax']:
                     pass
                 else:
-                    micro_model.domain_vars[dom_var_str] = float(self.hdf5_files[0]['Domain'].attrs[dom_var_str])
+                    micro_model.domain_vars[dom_var_str] = float(np.ravel(self.hdf5_files[0]['Domain'].attrs[dom_var_str])[0])
             except KeyError:
                 print(f'{dom_var_str} is not in the hdf5 Domain group attributes')
 
@@ -308,7 +308,7 @@ class METHOD_HDF5(object):
 
         micro_model.domain_vars['nt'] = self.num_files
         for counter in range(self.num_files):
-            micro_model.domain_vars['t'].append(float(self.hdf5_files[counter]['Domain'].attrs['endTime']))
+            micro_model.domain_vars['t'].append(float(np.ravel(self.hdf5_files[counter]['Domain'].attrs['endTime'])[0]))
 
         micro_model.domain_vars['x'] = np.zeros(micro_model.domain_vars['nx'])
         for i in range(len(micro_model.domain_vars['x'])):
