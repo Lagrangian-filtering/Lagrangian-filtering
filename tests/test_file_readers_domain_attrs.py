@@ -21,8 +21,7 @@ class TestReadInData3DDomainAttrs(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmpdir)
 
-    def _write_fake_file(self, path, t):
-        shape = (2, 2, 2)
+    def _write_fake_file(self, path, t, shape=(2, 2, 2), ramp=False):
         with h5py.File(path, 'w') as f:
             dom = f.create_group('Domain')
             # METHOD writes attributes as shape-(1,) arrays (H5LTset_attribute_*, size 1)
@@ -36,7 +35,7 @@ class TestReadInData3DDomainAttrs(unittest.TestCase):
 
             prim = f.create_group('Primitive')
             aux = f.create_group('Auxiliary')
-            data = np.ones(shape)
+            data = np.arange(np.prod(shape), dtype=float).reshape(shape) if ramp else np.ones(shape)
             for name in ('rho', 'vx', 'vy', 'vz', 'p'):
                 prim.create_dataset(name, data=data)
             for name in ('W', 'h', 'e'):
@@ -53,6 +52,35 @@ class TestReadInData3DDomainAttrs(unittest.TestCase):
         self.assertAlmostEqual(micro_model.domain_vars['dx'], 0.5)
         self.assertAlmostEqual(micro_model.domain_vars['xmax'], 1.0)
         np.testing.assert_allclose(micro_model.domain_vars['t'], [0.0, 1.0])
+
+    def test_crop_and_stride(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            for n, t in enumerate((0.0, 1.0)):
+                self._write_fake_file(os.path.join(tmp, 'data%d.hdf5' % n), t=t, shape=(6, 4, 2), ramp=True)
+            full = np.arange(48, dtype=float).reshape(6, 4, 2)
+
+            micro_model = IdealHD_3D()
+            METHOD_HDF5(os.path.join(tmp, '')).read_in_data3D(
+                micro_model, crop=((1, 5), (None, None), (None, None)), stride=2)
+
+            expected = full[1:5:2, 0:4:2, 0:2:2]
+            self.assertEqual(micro_model.prim_vars['n'].shape, (2,) + expected.shape)
+            np.testing.assert_array_equal(micro_model.prim_vars['n'][0], expected)
+            d = micro_model.domain_vars
+            self.assertEqual((d['nx'], d['ny'], d['nz']), expected.shape)
+            self.assertAlmostEqual(d['dx'], 1.0)   # 0.5 * stride 2
+            self.assertAlmostEqual(d['xmin'], 0.5)  # 0 + 1 cell * 0.5
+            np.testing.assert_allclose(d['x'], [0.5, 1.5])
+            np.testing.assert_allclose(d['y'], [0.0, 1.0])
+            self.assertAlmostEqual(d['xmax'], 0.5 + 2 * 1.0)
+        finally:
+            shutil.rmtree(tmp)
+
+    def test_empty_crop_raises(self):
+        reader = METHOD_HDF5(os.path.join(self.tmpdir, ''))
+        with self.assertRaises(ValueError):
+            reader.read_in_data3D(IdealHD_3D(), crop=((1, 1), (None, None), (None, None)))
 
 
 if __name__ == '__main__':

@@ -32,7 +32,13 @@ if __name__ == '__main__':
     FileReader = METHOD_HDF5(hdf5_directory, snapshots_opts['fewer_snaps_required'], snapshots_opts['smaller_list'])
 
     micro_model = IdealMHD_3D()
-    FileReader.read_in_data3D(micro_model)
+    # Optional: read only a sub-box and/or every stride-th cell, e.g.
+    # read_region = {"crop": [[0, 128], [0, 128], [0, 64]], "stride": 1}
+    read_region = json.loads(config['Micro_model_settings'].get('read_region', '{}'))
+    crop = read_region.get('crop')
+    FileReader.read_in_data3D(micro_model,
+                              crop=tuple(tuple(r) for r in crop) if crop else None,
+                              stride=int(read_region.get('stride', 1)))
     micro_model.setup_structures()
     print('Finished reading micro data from hdf5, structures also set up.', flush=True)
     print('Micro-model times: {}'.format(micro_model.domain_vars['t']))
