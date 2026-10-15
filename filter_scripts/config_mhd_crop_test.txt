@@ -1,0 +1,29 @@
+# FIRST PIPELINE TEST: 3D ideal MHD, 384x384x192 KHI window, 64x64x32 crop, 1 meso time slice.
+# Filter and observer-box are deliberately tiny because the 10-snapshot window only spans
+# ~4.7 dx in time (snapStride=1); the filter reaches ~W/2 in time along the observer, and
+# anything outside the window crashes interpn. Use for a pipeline/timing test, not science.
+# Run from the filter_scripts directory:  python pickling_meso_mhd.py config_mhd_crop_test.txt
+
+[Directories]
+hdf5_dir = /scratch/ih3/METHOD_simulations/khi_window_384x384x192_8x8x3_seed1/
+pickled_files_dir = /scratch/ih3/METHOD_simulations/khi_window_384x384x192_8x8x3_seed1/pickled
+figures_dir = .
+
+[Filenames]
+meso_pickled_filename = /resMHD3d_crop_test.pickle
+micro_pickled_filename = /
+
+[Micro_model_settings]
+snapshots_opts = {"fewer_snaps_required": false, "smaller_list": []}
+# crop = index ranges [start, stop) in x, y, z of the 384x384x192 grid
+read_region = {"crop": [[100, 164], [100, 164], [80, 112]], "stride": 1}
+
+[Meso_model_settings]
+# physical ranges must lie inside the cropped extent (x,y: 0.2604-0.4271, z: 0.2083-0.2917)
+meso_grid_smart = {"x_range": [0.2865, 0.4010], "y_range": [0.2865, 0.4010], "z_range": [0.2292, 0.2708], "num_T_slices": 1, "coarse_grain_factor": 4}
+# micro dx = 1/384 = 0.0026: box 2 dx, filter width 1.5 dx
+filtering_options = {"box_len_ratio": 2.0, "filter_width_ratio": 1.5}
+n_cpus = 16
+
+[Ohms_law_settings]
+terms = {"resistive": true, "dynamo": true, "hall": true}
