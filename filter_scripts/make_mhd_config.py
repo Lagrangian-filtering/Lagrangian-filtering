@@ -12,7 +12,7 @@ cluster, in the filtering conda environment, once the simulation has finished:
 Then:  sbatch submit_<name>.sh
 
 Why the check: the filter samples +-W/2 along the observer's time direction (and the
-observer search uses a box of side L), so it reaches up to ~ f * max(L, W)/2 in time, where
+observer search uses a box of side L), so it reaches up to ~ f * sqrt(3/5) * max(L, W)/2 in time, where
 f = gamma (1 + sqrt(3) v) for the fastest flow speed v. Samples outside the snapshot
 window crash interpn. The meso time slices (num_T_slices) also have to fit inside the window.
 All widths below are in units of the micro grid spacing dx.
@@ -80,7 +80,8 @@ def main():
     c = int((n - 1) / 2)
     margin = min(times[c] - times[0], times[-1] - times[c]) / dx  # in dx
     W, L = a.filter_width, a.box_len
-    reach = f_reach * max(W, L) / 2.0
+    # Gauss sample points sit at +-sqrt(3/5) * W/2 (Filters.py), not the full +-W/2
+    reach = f_reach * math.sqrt(3.0 / 5.0) * max(W, L) / 2.0
     half = a.num_t_slices // 2
     t_off = half * a.coarse
     cond_a = (a.num_t_slices / 2.0) * a.coarse <= margin
@@ -95,7 +96,7 @@ def main():
 
     ok = cond_a and cond_b
     if not ok:
-        allowed = max(0.0, 2.0 * (margin - t_off) / f_reach)
+        allowed = max(0.0, 2.0 * (margin - t_off) / (f_reach * math.sqrt(3.0 / 5.0)))
         print("\nWINDOW CHECK FAILED: %s" % ("meso time slices do not fit (reduce --num-t-slices or --coarse)"
               if not cond_a else "filter reaches outside the window"))
         print("With these slices, max(W, L) must be <= %.1f dx. Reduce widths, or re-run the simulation "
