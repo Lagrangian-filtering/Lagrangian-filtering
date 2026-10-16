@@ -70,6 +70,48 @@ class TestOhmsRegression(unittest.TestCase):
         vals = sorted(t['gamma_hall'] for t in tiles)
         self.assertGreater(vals[-1] - vals[0], 0.8)
 
+    @staticmethod
+    def smooth_field(shape, rng, sigma=2.0):
+        """Spatially correlated random 4-vector field (time component 0)."""
+        white = rng.normal(size=shape + (3,))
+        k = [np.fft.fftfreq(n) * 2 * np.pi for n in shape[1:]]
+        k2 = k[0][:, None, None] ** 2 + k[1][None, :, None] ** 2 + k[2][None, None, :] ** 2
+        kern = np.exp(-0.5 * sigma ** 2 * k2)[None, ..., None]
+        f = np.real(np.fft.ifftn(np.fft.fftn(white, axes=(1, 2, 3)) * kern, axes=(1, 2, 3)))
+        out = np.zeros(shape + (4,)); out[..., 1:] = f / f.std()
+        return out
+
+    def test_point_null_gives_false_positive_that_shift_null_avoids(self):
+        # Unrelated smooth fields still fit by chance (they share large-scale structure).
+        # The point-permutation null destroys that structure and so calls the fit significant;
+        # the shift null keeps it and correctly does not.
+        rng = np.random.default_rng(3)
+        shape = (1, 16, 16, 8)
+        E = self.smooth_field(shape, rng)
+        ops = {t: self.smooth_field(shape, rng) for t in OR.TERMS}
+        real = OR.fit_region(E, ops, OR.TERMS)['R2']
+        point = OR.permutation_null(E, ops, OR.TERMS, n_perm=30)
+        shifted = OR.shift_null(E, ops, OR.TERMS, n_perm=30, min_shift=3)
+        self.assertGreater(real, point.max())
+        self.assertLessEqual(real, shifted.max())
+
+    def test_shift_null_below_a_real_relation(self):
+        rng = np.random.default_rng(4)
+        shape = (1, 16, 16, 8)
+        J = self.smooth_field(shape, rng); B = self.smooth_field(shape, rng)
+        H = np.zeros_like(J); H[..., 1:] = np.cross(J[..., 1:], B[..., 1:])
+        ops = {'R_tilde': J, 'alpha_dynamo': B, 'gamma_hall': H}
+        E = 0.4 * J + 0.05 * self.smooth_field(shape, rng)
+        real = OR.fit_region(E, ops, OR.TERMS)['R2']
+        null = OR.shift_null(E, ops, OR.TERMS, n_perm=30, min_shift=3)
+        self.assertGreater(real, 0.9)
+        self.assertLess(null.max(), real - 0.3)
+
+    def test_shift_null_rejects_grids_too_small_to_shift(self):
+        E, ops = synthetic(shape=(1, 4, 4, 3))
+        with self.assertRaises(ValueError):
+            OR.shift_null(E, ops, OR.TERMS, n_perm=2, min_shift=3)
+
     def test_degenerate_operators_do_not_crash(self):
         E, ops = synthetic()
         ops['alpha_dynamo'] = ops['R_tilde'].copy()   # linearly dependent operators

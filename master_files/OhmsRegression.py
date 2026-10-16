@@ -112,6 +112,35 @@ def permutation_null(E, ops, names, n_perm=50, seed=0):
     return np.array([fit_region(E[rng.permutation(len(E))], ops, names)['R2'] for _ in range(n_perm)])
 
 
+def shift_null(E5, ops5, names, n_perm=100, min_shift=3, seed=0):
+    """
+    Chance level of the fit that respects spatial correlation.
+
+    permutation_null shuffles individual points, which destroys the spatial correlation of
+    the fields and so understates how well unrelated, smooth fields can fit by chance. Here
+    E is instead circularly shifted, as a whole, by a random offset of at least min_shift
+    meso cells along each spatial axis that is long enough (an axis shorter than
+    2*min_shift + 1 is left unshifted), keeping every field's internal structure but
+    breaking the alignment between E and the operators. Time is not shifted. The shift
+    wraps around the box, which adds a seam at the crop faces: acceptable for a null.
+
+    E5: (Nt, Nx, Ny, Nz, 4); ops5: dict of arrays of the same shape.
+    """
+    rng = np.random.default_rng(seed)
+    E5 = np.asarray(E5, dtype=float)
+    lengths = E5.shape[1:4]
+    shiftable = [n >= 2 * min_shift + 1 for n in lengths]
+    if not any(shiftable):
+        raise ValueError("grid %s too small to shift by at least %d cells" % (lengths, min_shift))
+    out = []
+    for _ in range(n_perm):
+        shifts = [int(rng.integers(min_shift, n - min_shift + 1)) if ok else 0
+                  for n, ok in zip(lengths, shiftable)]
+        Es = np.roll(E5, shift=shifts, axis=(1, 2, 3))
+        out.append(fit_region(Es, ops5, names)['R2'])
+    return np.array(out)
+
+
 def summarize(values):
     """median, 16th and 84th percentiles, and fraction positive of a set of tile values."""
     v = np.asarray([x for x in values if np.isfinite(x)], dtype=float)
