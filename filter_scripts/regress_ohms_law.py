@@ -106,8 +106,9 @@ def main():
     axes[0].set_xticks(x); axes[0].set_xticklabels(labels, rotation=30)
     axes[0].set_ylabel("global R2"); axes[0].set_ylim(0, 1); axes[0].legend()
     axes[0].set_title("constant-coefficient fit, whole region")
-    axes[1].boxplot([[t['R2'] for t in r['tiles']] for r in results], labels=labels)
-    axes[1].tick_params(axis='x', rotation=30)
+    axes[1].boxplot([[t['R2'] for t in r['tiles']] for r in results])
+    axes[1].set_xticks(np.arange(1, len(labels) + 1))   # 'labels=' was renamed/removed across matplotlib versions
+    axes[1].set_xticklabels(labels, rotation=30)
     axes[1].set_ylabel("tile R2"); axes[1].set_ylim(0, 1)
     axes[1].set_title("R2 per tile (block %s)" % (tuple(a.block),))
     fig.savefig(os.path.join(a.outdir, "ohms_regression.png"), dpi=130)
