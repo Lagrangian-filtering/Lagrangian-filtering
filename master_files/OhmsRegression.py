@@ -282,3 +282,109 @@ def merge_meso_tiles(tiles, spacing, tol=0.02):
             'Y': axes[1][0] + spacing[1] * np.arange(shape[1]),
             'Z': axes[2][0] + spacing[2] * np.arange(shape[2]),
             'fields': merged, 'present': present}
+
+
+# ---------------------------------------------------------------------------------------
+# Gradient (second-order) model of E_tilde from the filter's own covariance
+# ---------------------------------------------------------------------------------------
+#
+# Setup: micro fields obey ideal MHD, E = -v x B (lab frame), and F^{0i} = E^i. The meso
+# observer is u~ = gamma (1, v~) with v~ = <D v>/<D> (Favre average, weight D = n u^0 = the
+# lab-frame density, which is how the code defines u~). Write <F> as the ideal-MHD tensor built
+# from v~ and <B>, plus a purely electric remainder dE = <E> + v~ x <B>. The ideal part has zero
+# electric field for u~, so exactly
+#
+#     E~^a = u~_b <F^{ab}> = gamma (v~ . dE, dE),
+#     dE   = -<dv x dB> - (<v> - v~) x <B>,    <v> - v~ = -cov(D, v)/<D>.
+#
+# The filter averages over a 4D box in the observer's own frame. To second order in its width,
+# the covariance of two fluctuating fields is
+#
+#     cov(a, b) = sigma^2 [ grad a . grad b - d_t a d_t b + 2 (u.d a)(u.d b) ],
+#
+# with sigma^2 = W^2/12 per box direction and u.d = gamma (d_t + v.grad) (this uses
+# sum over the tetrad e_a e_a = g + 2 u u, so it does not depend on how the spatial axes of the
+# box are oriented). Hence
+#
+#     dE = -g1 + g2,   g1 = sigma^2 S(v, B) [cross products],   g2 = sigma^2 (S(D, v)/D) x <B>,
+#
+# where S(a, b) is the bracket above with the product replaced by the cross product (vector,
+# vector) or scalar x vector. No free constant remains, so E~ ~= -O(g1) + O(g2), with
+# O(g) = gamma (v~ . g, g), is a prediction. Regressing E~ on O(g1), O(g2) should give
+# coefficients near -1 and +1 if the second-order model is the whole story.
+
+def lab_derivatives(f, spacings, dt=None):
+    """[d_t f, d_x f, d_y f, d_z f] for f of shape (Nt, Nx, Ny, Nz, ...). d_t is zero unless dt is given and Nt >= 3."""
+    d0 = np.gradient(f, dt, axis=0) if (dt and f.shape[0] >= 3) else np.zeros_like(f)
+    return [d0] + [np.gradient(f, spacings[l], axis=l + 1) for l in range(3)]
+
+
+def _expand(x, like):
+    return x.reshape(x.shape + (1,) * (like.ndim - x.ndim))
+
+
+def covariance_bracket(a, b, v, gamma, spacings, dt, product):
+    """
+    sum_{mu nu} (g^{mu nu} + 2 u^mu u^nu) d_mu a (x) d_nu b, with (x) given by `product`:
+    grad a (x) grad b - d_t a (x) d_t b + 2 gamma^2 (Dt a) (x) (Dt b), Dt = d_t + v.grad.
+    Multiply by sigma^2 to get the second-order covariance.
+    """
+    da, db = lab_derivatives(a, spacings, dt), lab_derivatives(b, spacings, dt)
+
+    def material(d, f):
+        return d[0] + sum(_expand(v[..., l], f) * d[l + 1] for l in range(3))
+
+    spatial = sum(product(da[l + 1], db[l + 1]) for l in range(3))
+    time_part = -product(da[0], db[0])
+    adv = product(material(da, a), material(db, b)) * _expand(2.0 * gamma ** 2, product(da[0], db[0]))
+    return spatial + time_part + adv
+
+
+def _cross(x, y):
+    return np.cross(x, y)
+
+
+def _scalar_times_vector(x, y):
+    return x[..., None] * y
+
+
+def observer_electric(g, v, gamma):
+    """The 4-vector gamma (v.g, g): the electric field g as seen by an observer u = gamma (1, v)."""
+    out = np.zeros(g.shape[:-1] + (4,))
+    out[..., 0] = gamma * np.sum(v * g, axis=-1)
+    out[..., 1:] = gamma[..., None] * g
+    return out
+
+
+def gradient_model_operators(v, B, D, u, spacings, sigma2, dt=None):
+    """
+    Second-order model of E_tilde (see the derivation above).
+
+    v: (Nt,Nx,Ny,Nz,3) lab-frame meso velocity u~^i/u~^0; B: same shape, lab-frame filtered B;
+    D: (Nt,Nx,Ny,Nz) filtered lab-frame density <n u^0>; u: (...,4) the meso observer u~;
+    spacings: meso (Dx, Dy, Dz); sigma2 = W^2/12; dt: meso time spacing (time derivatives are
+    set to zero if None or Nt < 3, which leaves the model incomplete).
+
+    Returns {'model_vB': O(g1) (expected coefficient -1), 'model_dens': O(g2) (expected +1),
+    'prediction': -O(g1) + O(g2)}, each shape (...,4).
+    """
+    gamma = u[..., 0]
+    g1 = sigma2 * covariance_bracket(v, B, v, gamma, spacings, dt, _cross)
+    T = covariance_bracket(D, v, v, gamma, spacings, dt, _scalar_times_vector)
+    g2 = sigma2 * np.cross(T / D[..., None], B)
+    O1, O2 = observer_electric(g1, v, gamma), observer_electric(g2, v, gamma)
+    return {'model_vB': O1, 'model_dens': O2, 'prediction': -O1 + O2}
+
+
+def prediction_r2(E, pred):
+    """R2 of a parameter-free prediction: 1 - |E - pred|^2 / |E|^2 (can be negative)."""
+    E = np.asarray(E, dtype=float).reshape(-1, 4)
+    pred = np.asarray(pred, dtype=float).reshape(-1, 4)
+    EE = mink_dot(E, E).sum()
+    r = E - pred
+    return float(1.0 - mink_dot(r, r).sum() / EE) if EE > 0 else float('nan')
+
+
+def subgrid_B_energy(BSq_filt, B_lab_tilde):
+    """<B^2> - |<B>|^2 from the filtered B^2 and the filtered lab-frame B (>= 0 for a non-negative filter)."""
+    return np.asarray(BSq_filt) - np.sum(np.asarray(B_lab_tilde) ** 2, axis=-1)

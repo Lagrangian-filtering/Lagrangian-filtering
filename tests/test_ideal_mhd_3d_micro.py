@@ -69,6 +69,11 @@ class TestIdealMHD3DStructures(unittest.TestCase):
         self.m = make_tiny_model()
         self.m.setup_structures()
 
+    def test_BSq_is_lab_frame_B_squared_and_registered(self):
+        expected = self.m.prim_vars['Bx'] ** 2 + self.m.prim_vars['By'] ** 2 + self.m.prim_vars['Bz'] ** 2
+        np.testing.assert_allclose(self.m.structures['BSq'], expected)
+        self.assertIn('BSq', self.m.vars)   # so the filter can find it
+
     def test_faraday_tensor_antisymmetric(self):
         F = self.m.structures['FaradayTensor']
         np.testing.assert_allclose(F, -np.swapaxes(F, -1, -2), atol=1e-12)

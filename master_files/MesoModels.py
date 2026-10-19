@@ -2584,7 +2584,7 @@ class resMHD_3D(resHD_3D):
         for var in ('FaradayTensor', 'ChargeCurrent', 'LorentzForceDensity'):
             self.meso_structures[var] = []
 
-        em_scalars = ['sigma_tilde', 'R_tilde', 'alpha_dynamo', 'gamma_hall']
+        em_scalars = ['sigma_tilde', 'R_tilde', 'alpha_dynamo', 'gamma_hall', 'BSq_filt', 'B2_sub']
         em_vectors = ['E_tilde', 'B_tilde', 'J_tilde', 'F_closure', 'Ohm_res']
         self.meso_scalars_strs = self.meso_scalars_strs + em_scalars
         self.meso_vectors_strs = self.meso_vectors_strs + em_vectors
@@ -2609,7 +2609,7 @@ class resMHD_3D(resHD_3D):
             self.meso_structures[var] = np.zeros((Nt, Nx, Ny, Nz, 4, 4))
         for var in ('ChargeCurrent', 'LorentzForceDensity'):
             self.meso_structures[var] = np.zeros((Nt, Nx, Ny, Nz, 4))
-        for var in ('sigma_tilde', 'R_tilde', 'alpha_dynamo', 'gamma_hall'):
+        for var in ('sigma_tilde', 'R_tilde', 'alpha_dynamo', 'gamma_hall', 'BSq_filt', 'B2_sub'):
             self.meso_vars[var] = np.zeros((Nt, Nx, Ny, Nz))
         for var in ('E_tilde', 'B_tilde', 'J_tilde', 'F_closure', 'Ohm_res'):
             self.meso_vars[var] = np.zeros((Nt, Nx, Ny, Nz, 4))
@@ -2621,7 +2621,7 @@ class resMHD_3D(resHD_3D):
             self.meso_structures[var] = np.zeros((Nt, Nx, Ny, Nz, 4, 4))
         for var in ('ChargeCurrent', 'LorentzForceDensity'):
             self.meso_structures[var] = np.zeros((Nt, Nx, Ny, Nz, 4))
-        for var in ('sigma_tilde', 'R_tilde', 'alpha_dynamo', 'gamma_hall'):
+        for var in ('sigma_tilde', 'R_tilde', 'alpha_dynamo', 'gamma_hall', 'BSq_filt', 'B2_sub'):
             self.meso_vars[var] = np.zeros((Nt, Nx, Ny, Nz))
         for var in ('E_tilde', 'B_tilde', 'J_tilde', 'F_closure', 'Ohm_res'):
             self.meso_vars[var] = np.zeros((Nt, Nx, Ny, Nz, 4))
@@ -2648,7 +2648,7 @@ class resMHD_3D(resHD_3D):
                 print('Observers are not computed on (parts of) the grid!')
                 return None
 
-        vars = ['BC', 'SET', 'p', 'FaradayTensor', 'ChargeCurrent', 'LorentzForceDensity']
+        vars = ['BC', 'SET', 'p', 'FaradayTensor', 'ChargeCurrent', 'LorentzForceDensity', 'BSq']
         points_observers = [[points[i], observers[i]] for i in range(len(points))]
 
         filtered_vars = dict.fromkeys(vars)
@@ -2663,6 +2663,13 @@ class resMHD_3D(resHD_3D):
             self.meso_structures['FaradayTensor'][idx] = filtered_vars['FaradayTensor'][i]
             self.meso_structures['ChargeCurrent'][idx] = filtered_vars['ChargeCurrent'][i]
             self.meso_structures['LorentzForceDensity'][idx] = filtered_vars['LorentzForceDensity'][i]
+            self.meso_vars['BSq_filt'][idx] = filtered_vars['BSq'][i]
+
+        # Sub-filter magnetic energy <B^2> - |<B>|^2 (lab frame; >= 0 because both averages use the same
+        # non-negative filter weights). <B> is recovered from <F^{ab}> as seen by the lab observer u = (1,0,0,0).
+        u_lab = np.array([1.0, 0.0, 0.0, 0.0])
+        _, B_lab = Base.observer_frame_fields(self.meso_structures['FaradayTensor'], u_lab, self.metric)
+        self.meso_vars['B2_sub'] = self.meso_vars['BSq_filt'] - np.sum(B_lab[..., 1:] ** 2, axis=-1)
 
     @staticmethod
     def decompose_EM_task(u_t, F_filt, j_filt, lorentz_filt, metric):

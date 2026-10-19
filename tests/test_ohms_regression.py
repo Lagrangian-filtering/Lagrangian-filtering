@@ -177,6 +177,56 @@ class TestOhmsRegression(unittest.TestCase):
         with self.assertRaises(ValueError):
             OR.merge_meso_tiles([a, b], (d, d, d))
 
+    @staticmethod
+    def linear_fields(shape=(1, 6, 5, 4), a=2.0, b=3.0, vx=0.0, gamma=1.0, D=None):
+        x = np.arange(shape[1], dtype=float)[None, :, None, None] * np.ones(shape)
+        v = np.zeros(shape + (3,)); v[..., 0] = vx; v[..., 1] = a * x       # v = (vx, a x, 0)
+        B = np.zeros(shape + (3,)); B[..., 2] = b * x                        # B = (0, 0, b x)
+        Dd = np.ones(shape) if D is None else D
+        u = np.zeros(shape + (4,)); u[..., 0] = gamma; u[..., 1:] = gamma * v
+        return v, B, Dd, u
+
+    def test_gradient_model_static_observer_matches_hand_calculation(self):
+        # v = (0, a x, 0), B = (0, 0, b x): d_x v x d_x B = (a b, 0, 0); no time or advective part
+        v, B, D, u = self.linear_fields()
+        ops = OR.gradient_model_operators(v, B, D, u, (1.0, 1.0, 1.0), sigma2=0.5)
+        g1 = 0.5 * 2.0 * 3.0
+        np.testing.assert_allclose(ops['model_vB'][0, 2, 2, 2, 1:], [g1, 0.0, 0.0], atol=1e-9)
+        np.testing.assert_allclose(ops['model_dens'], 0.0, atol=1e-12)    # uniform density: no weighting term
+
+    def test_gradient_model_advective_term(self):
+        # advection speed 0.5 along x adds 2 gamma^2 (Dt v x Dt B) with Dt = 0.5 d_x: extra 2 g^2 (0.25) a b
+        gam = 2.0
+        v, B, D, u = self.linear_fields(vx=0.5, gamma=gam)
+        u[..., 0] = gam; u[..., 1:] = gam * v   # keep gamma as given (not 1/sqrt(1-v^2)); only the algebra is tested
+        ops = OR.gradient_model_operators(v, B, D, u, (1.0, 1.0, 1.0), sigma2=1.0)
+        a, b = 2.0, 3.0
+        expect = a * b + 2 * gam ** 2 * 0.25 * a * b
+        self.assertAlmostEqual(float(ops['model_vB'][0, 2, 2, 2, 1] / gam), expect, places=6)
+
+    def test_observer_electric_is_orthogonal_to_the_observer(self):
+        rng = np.random.default_rng(1)
+        v = rng.uniform(-0.4, 0.4, size=(2, 3, 3, 3, 3)); gam = 1.0 / np.sqrt(1 - np.sum(v ** 2, axis=-1))
+        u = np.zeros(v.shape[:-1] + (4,)); u[..., 0] = gam; u[..., 1:] = gam[..., None] * v
+        O = OR.observer_electric(rng.normal(size=v.shape), v, gam)
+        np.testing.assert_allclose(OR.mink_dot(u, O), 0.0, atol=1e-10)
+
+    def test_density_term_is_zero_for_uniform_density_and_nonzero_otherwise(self):
+        v, B, D, u = self.linear_fields()
+        x = np.arange(6, dtype=float)[None, :, None, None] * np.ones(D.shape)
+        ops = OR.gradient_model_operators(v, B, 1.0 + 0.1 * x, u, (1.0, 1.0, 1.0), sigma2=1.0)
+        self.assertGreater(float(np.abs(ops['model_dens']).max()), 1e-3)
+
+    def test_prediction_r2_and_subgrid_energy(self):
+        E, _ = synthetic()
+        self.assertAlmostEqual(OR.prediction_r2(E, E), 1.0)
+        self.assertLess(OR.prediction_r2(E, -E), 0.0)
+        rng = np.random.default_rng(2)
+        b = rng.normal(size=(500, 3)) + np.array([1.0, 0.0, 2.0])
+        sub = OR.subgrid_B_energy(np.mean(np.sum(b ** 2, axis=1)), np.mean(b, axis=0))
+        self.assertAlmostEqual(float(sub), float(np.sum(np.var(b, axis=0))), places=10)
+        self.assertGreaterEqual(float(sub), 0.0)
+
 
 if __name__ == '__main__':
     unittest.main()

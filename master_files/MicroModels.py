@@ -565,7 +565,7 @@ class IdealMHD_3D(object):
         for str in self.aux_strs:
             self.aux_vars[str] = []
 
-        self.structures_strs = ("BC", "SET", "bar_vel", "FaradayTensor", "ChargeCurrent", "LorentzForceDensity", "SET_EM")
+        self.structures_strs = ("BC", "SET", "bar_vel", "FaradayTensor", "ChargeCurrent", "LorentzForceDensity", "SET_EM", "BSq")
         self.structures = dict.fromkeys(self.structures_strs)
         for str in self.structures_strs:
             self.structures[str] = []
@@ -573,7 +573,7 @@ class IdealMHD_3D(object):
         self.labels_var_dict = {
             'BC': r'$n^{a}$', 'SET': r'$T_F^{ab}$', 'bar_vel': r'$u^a$',
             'FaradayTensor': r'$F^{ab}$', 'ChargeCurrent': r'$j^{a}$',
-            'LorentzForceDensity': r'$-j_aF^{ab}$', 'SET_EM': r'$T_{EM}^{ab}$',
+            'LorentzForceDensity': r'$-j_aF^{ab}$', 'SET_EM': r'$T_{EM}^{ab}$', 'BSq': r'$B^2$',
             'vx': r'$v_x$', 'vy': r'$v_y$', 'vz': r'$v_z$',
             'Bx': r'$B_x$', 'By': r'$B_y$', 'Bz': r'$B_z$',
             'n': r'$n$', 'W': r'$W$', 'e': r'$e$', 'h': r'$h$', 'p': r'$p$'}
@@ -721,6 +721,11 @@ class IdealMHD_3D(object):
         term = np.einsum('...ac,...bc->...ab', F, F_mixed)
         scalar = np.einsum('...cd,...cd->...', F_lower, F)
         self.structures['SET_EM'] = term - 0.25 * np.einsum('ab,...->...ab', self.metric, scalar)
+
+        # Lab-frame B^2 as its own structure, so that <B^2> can be filtered and compared with |<B>|^2
+        # (the difference is the sub-filter magnetic energy)
+        self.structures['BSq'] = (np.asarray(self.prim_vars['Bx']) ** 2 + np.asarray(self.prim_vars['By']) ** 2
+                                  + np.asarray(self.prim_vars['Bz']) ** 2)
 
         self.vars = self.prim_vars
         self.vars.update(self.aux_vars)
