@@ -37,6 +37,7 @@ def main():
     p.add_argument("--block", type=int, nargs=3, default=[6, 6, 3])
     p.add_argument("--min-points", type=int, default=100)
     p.add_argument("--n-null", type=int, default=50)
+    p.add_argument("--label", default="", help="stored in the npz, e.g. the filter width of a scan")
     p.add_argument("--outdir", default=".")
     a = p.parse_args()
 
@@ -72,6 +73,7 @@ def main():
     print("  global R2 = %.3f   |pred| / |E| = %.3f" % (OR.prediction_r2(E_, pred), ratio))
     null = OR.prediction_shift_null(E_, pred, n_perm=a.n_null)
     print("  shift null for this R2: median %.3f, 95th percentile %.3f" % (np.median(null), np.percentile(null, 95)))
+    pred_null95 = float(np.percentile(null, 95))
     sc = OR.fit_region(E_, {'pred': pred}, ('pred',))
     print("  best overall scale of the prediction: %.3g (1 = as predicted); R2 at that scale = %.3f = cos^2 of the angle between E and the prediction" % (sc['pred'], sc['R2']))
     tiles = OR.tile_fits(E_, {'pred': pred}, ('pred',), tuple(a.block), min_points=a.min_points)
@@ -84,9 +86,11 @@ def main():
               ('R_tilde', 'alpha_dynamo', 'gamma_hall', 'model_vB', 'model_dens')]
     print("\nCONSTANT-COEFFICIENT FITS (global; shift-null 95th percentile in brackets); expected: model_vB -1, model_dens +1")
     print("%-52s %7s %9s   %s" % ("terms", "R2", "(null95)", "coefficients"))
+    rows = {}
     for names in models:
         fit = OR.fit_region(E_, ops, names)
         null = OR.shift_null(E_, ops, names, n_perm=a.n_null, min_shift=3)
+        rows[names] = (fit['R2'], float(np.percentile(null, 95)), {n: fit[n] for n in names})
         print("%-52s %7.3f (%7.3f)   %s" % ("+".join(names), fit['R2'], np.percentile(null, 95),
               "  ".join("%s %.3g" % (n.replace('_tilde', '').replace('alpha_dynamo', 'alpha').replace('gamma_hall', 'gamma'), fit[n]) for n in names)))
 
@@ -99,7 +103,14 @@ def main():
 
     os.makedirs(a.outdir, exist_ok=True)
     np.savez(os.path.join(a.outdir, "gradient_model.npz"),
-             pred_R2=OR.prediction_r2(E_, pred), amplitude_ratio=ratio,
+             label=a.label, sigma2=sigma2, filter_width=float(m.filter.filter_width), n_slices=Nt,
+             pred_R2=OR.prediction_r2(E_, pred), pred_null95=pred_null95, amplitude_ratio=ratio,
+             best_scale=sc['pred'], best_scale_R2=sc['R2'],
+             fit_names=np.array(["+".join(k) for k in rows]), fit_R2=np.array([v[0] for v in rows.values()]),
+             fit_null95=np.array([v[1] for v in rows.values()]),
+             model_vB_coeff=rows[('model_vB',)][2]['model_vB'],
+             joint_vB_coeff=rows[('model_vB', 'model_dens')][2]['model_vB'],
+             joint_dens_coeff=rows[('model_vB', 'model_dens')][2]['model_dens'],
              tile_model_vB=np.array([t['model_vB'] for t in tiles]), tile_model_dens=np.array([t['model_dens'] for t in tiles]))
     print("\nWrote gradient_model.npz to %s" % a.outdir)
 

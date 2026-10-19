@@ -111,6 +111,20 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
                         '--min-points', '20', '--n-null', '4', '--outdir', out)
         self.assertTrue(os.path.exists(os.path.join(out, 'gradient_model.npz')))
 
+    def test_gradient_scan_summary(self):
+        # two "widths" through the label mechanism the scan scripts use, then the summarizer
+        root = os.path.join(self.tmp, 'gscan')
+        for w, seed in (('2', 4), ('4', 5)):
+            self.run_script('regress_gradient_model.py', self.write_pickle('p%s.pickle' % w, seed=seed),
+                            '--block', '6', '6', '3', '--min-points', '20', '--n-null', '3', '--label', w,
+                            '--outdir', os.path.join(root, 'w' + w))
+        d = np.load(os.path.join(root, 'w4', 'gradient_model.npz'))
+        for key in ('fit_names', 'fit_R2', 'fit_null95', 'model_vB_coeff', 'joint_dens_coeff', 'pred_null95', 'best_scale'):
+            self.assertIn(key, d.files)
+        self.assertEqual(str(d['label']), '4')
+        sys.argv = ['summarize_gradient_scan.py', root]
+        runpy.run_path(os.path.join(SCRIPTS, 'summarize_gradient_scan.py'), run_name='__main__')
+
 
 if __name__ == '__main__':
     unittest.main()
