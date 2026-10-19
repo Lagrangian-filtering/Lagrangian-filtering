@@ -100,6 +100,7 @@ def main():
              shift_null_R2=np.array([r['shnull'] for r in results]),
              label=a.label,
              global_coeffs=np.array([[r['fit'][t] for t in OR.TERMS] for r in results]),
+             gamma_only_tile_gamma=np.array([x['gamma_hall'] for x in results[2]['tiles']]),
              R_only_tile_R_tilde=np.array([x['R_tilde'] for x in results[0]['tiles']]),
              full_tile_R_tilde=np.array([x['R_tilde'] for x in full['tiles']]),
              full_tile_alpha=np.array([x['alpha_dynamo'] for x in full['tiles']]),

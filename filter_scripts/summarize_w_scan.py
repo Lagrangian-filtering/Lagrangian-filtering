@@ -23,5 +23,16 @@ print("%5s | %-30s | %-33s | %-14s | %s" % ("W/dx", "R-only: R2  shift95  R_tild
       "full: R2 shift95", "alpha-only R2, gamma-only R2"))
 for r in sorted(rows):
     print("%5g | %7.3f %8.3f %12.3g | %11.3g [%9.3g, %9.3g] %2d | %7.3f %7.3f | %6.3f %6.3f" % r)
+print("\nHALL-ONLY fit (gamma): is it a stable constant?")
+print("%5s | %12s | %11s [%9s, %9s] | %s" % ("W/dx", "global gamma", "tile median", "p16", "p84", "tiles with gamma > 0"))
+for f in sorted(glob.glob(os.path.join(root, "w*", "ohms_regression.npz")), key=lambda x: float(np.load(x)["label"])):
+    d = np.load(f)
+    if "gamma_only_tile_gamma" not in d.files:
+        print("%5g | (re-run regress_ohms_law.py: this npz predates the gamma columns)" % float(d["label"]))
+        continue
+    g = d["gamma_only_tile_gamma"]
+    p16, med, p84 = np.percentile(g, [16, 50, 84])
+    print("%5g | %12.3g | %11.3g [%9.3g, %9.3g] | %d%% of %d" % (
+        float(d["label"]), d["global_coeffs"][2, 2], med, p16, p84, round(100 * np.mean(g > 0)), len(g)))
 print("\nA closure for sub-filter turbulence should show R_tilde varying smoothly with W. Compare R2 "
       "with shift95 (the correlation-preserving null), not with a point permutation.")
