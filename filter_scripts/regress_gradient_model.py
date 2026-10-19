@@ -70,10 +70,14 @@ def main():
     ratio = np.sqrt(OR.mink_dot(pred, pred).sum() / OR.mink_dot(E_, E_).sum())
     print("PARAMETER-FREE PREDICTION  E~ ~= -O(g1) + O(g2):")
     print("  global R2 = %.3f   |pred| / |E| = %.3f" % (OR.prediction_r2(E_, pred), ratio))
+    null = OR.prediction_shift_null(E_, pred, n_perm=a.n_null)
+    print("  shift null for this R2: median %.3f, 95th percentile %.3f" % (np.median(null), np.percentile(null, 95)))
+    sc = OR.fit_region(E_, {'pred': pred}, ('pred',))
+    print("  best overall scale of the prediction: %.3g (1 = as predicted); R2 at that scale = %.3f = cos^2 of the angle between E and the prediction" % (sc['pred'], sc['R2']))
     tiles = OR.tile_fits(E_, {'pred': pred}, ('pred',), tuple(a.block), min_points=a.min_points)
     if tiles:
-        print("  fitted scale of the prediction: global %.3g (1 = exactly as predicted); tile median %.3g [p16 %.3g, p84 %.3g]" % (
-            OR.fit_region(E_, {'pred': pred}, ('pred',))['pred'], *OR.summarize([t['pred'] for t in tiles])[:3]))
+        s_ = OR.summarize([t['pred'] for t in tiles])
+        print("  best scale per tile: median %.3g [p16 %.3g, p84 %.3g] over %d tiles" % (s_['median'], s_['p16'], s_['p84'], s_['n']))
 
     models = [('model_vB',), ('model_dens',), ('model_vB', 'model_dens'), ('R_tilde',), ('gamma_hall',),
               ('R_tilde', 'alpha_dynamo', 'gamma_hall'), ('R_tilde', 'model_vB', 'model_dens'),

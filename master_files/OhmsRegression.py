@@ -388,3 +388,21 @@ def prediction_r2(E, pred):
 def subgrid_B_energy(BSq_filt, B_lab_tilde):
     """<B^2> - |<B>|^2 from the filtered B^2 and the filtered lab-frame B (>= 0 for a non-negative filter)."""
     return np.asarray(BSq_filt) - np.sum(np.asarray(B_lab_tilde) ** 2, axis=-1)
+
+
+def prediction_shift_null(E5, pred5, n_perm=50, min_shift=3, seed=0):
+    """
+    Chance level for prediction_r2: R2 of the (parameter-free) prediction when E is circularly
+    shifted relative to it, keeping spatial structure (as shift_null). Time is not shifted.
+    """
+    rng = np.random.default_rng(seed)
+    E5 = np.asarray(E5, dtype=float)
+    lengths = E5.shape[1:4]
+    shiftable = [n >= 2 * min_shift + 1 for n in lengths]
+    if not any(shiftable):
+        raise ValueError("grid %s too small to shift by at least %d cells" % (lengths, min_shift))
+    out = []
+    for _ in range(n_perm):
+        shifts = [int(rng.integers(min_shift, n - min_shift + 1)) if ok else 0 for n, ok in zip(lengths, shiftable)]
+        out.append(prediction_r2(np.roll(E5, shift=shifts, axis=(1, 2, 3)), pred5))
+    return np.array(out)

@@ -227,6 +227,16 @@ class TestOhmsRegression(unittest.TestCase):
         self.assertAlmostEqual(float(sub), float(np.sum(np.var(b, axis=0))), places=10)
         self.assertGreaterEqual(float(sub), 0.0)
 
+    def test_prediction_shift_null_is_lower_than_a_good_prediction(self):
+        rng = np.random.default_rng(6)
+        shape = (1, 16, 16, 8)
+        E = self.smooth_field(shape, rng)
+        pred = E + 0.2 * self.smooth_field(shape, rng)       # a good prediction
+        real = OR.prediction_r2(E, pred)
+        null = OR.prediction_shift_null(E, pred, n_perm=20, min_shift=3)
+        self.assertGreater(real, 0.8)
+        self.assertLess(null.max(), real - 0.5)
+
 
 if __name__ == '__main__':
     unittest.main()
