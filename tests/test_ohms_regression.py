@@ -154,6 +154,29 @@ class TestOhmsRegression(unittest.TestCase):
         maps = OR.local_term_maps(E, ops, (5, 5, 3))
         self.assertTrue(np.all(OR.winner_map(maps['R2'], threshold=2.0) == -1))
 
+    def test_merge_places_abutting_tiles_and_marks_missing(self):
+        d = 0.5
+        def tile(x0, y0, val):
+            X = x0 + d * np.arange(3); Y = y0 + d * np.arange(2); Z = np.array([0.0])
+            return {'X': X, 'Y': Y, 'Z': Z,
+                    'fields': {'a': np.full((1, 3, 2, 1, 4), val), 's': np.full((1, 3, 2, 1), val)}}
+        # two tiles side by side in x, a third offset in y leaving a hole at the far corner
+        merged = OR.merge_meso_tiles([tile(0.0, 0.0, 1.0), tile(1.5, 0.0, 2.0), tile(0.0, 1.0, 3.0)], (d, d, d))
+        self.assertEqual(merged['fields']['a'].shape, (1, 6, 4, 1, 4))
+        self.assertTrue(np.allclose(merged['X'], 0.5 * np.arange(6)))
+        self.assertEqual(merged['fields']['s'][0, 0, 0, 0], 1.0)
+        self.assertEqual(merged['fields']['s'][0, 5, 1, 0], 2.0)
+        self.assertEqual(merged['fields']['s'][0, 2, 3, 0], 3.0)
+        self.assertFalse(merged['present'][5, 3, 0])        # uncovered corner
+        self.assertEqual(int(merged['present'].sum()), 18)
+
+    def test_merge_rejects_misaligned_tiles(self):
+        d = 0.5
+        a = {'X': d * np.arange(3), 'Y': d * np.arange(2), 'Z': np.array([0.0]), 'fields': {'s': np.ones((1, 3, 2, 1))}}
+        b = {'X': 0.2 + d * np.arange(3), 'Y': d * np.arange(2), 'Z': np.array([0.0]), 'fields': {'s': np.ones((1, 3, 2, 1))}}
+        with self.assertRaises(ValueError):
+            OR.merge_meso_tiles([a, b], (d, d, d))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -235,3 +235,50 @@ def local_null_threshold(E5, ops5, window, n_null=20, min_shift=None, q=95.0, se
         top = np.nanmax(np.where(np.isnan(m['R2']), -np.inf, m['R2']), axis=0)
         best.append(top[m['valid'] & np.isfinite(top)])
     return float(np.percentile(np.concatenate(best), q))
+
+
+# ---------------------------------------------------------------------------------------
+# Merging meso grids from several crops into one mosaic
+# ---------------------------------------------------------------------------------------
+
+def merge_meso_tiles(tiles, spacing, tol=0.02):
+    """
+    Place the meso fields of several crops on one global lattice.
+
+    tiles: list of dicts with 'X', 'Y', 'Z' (1D coordinate arrays of the tile's meso points)
+    and 'fields' {name: array (Nt, Nx, Ny, Nz, ...)}; spacing = (Dx, Dy, Dz) of the meso grid.
+    All tiles must sit on a common lattice (coordinates differing by whole multiples of the
+    spacing) and have the same Nt. Where tiles overlap the later one wins. Returns a dict with
+    the global axes 'X', 'Y', 'Z', the merged 'fields' (zero where no tile covers a point) and
+    'present', a boolean (Nx, Ny, Nz) mask of covered points.
+    """
+    axes = []
+    for k, key in enumerate('XYZ'):
+        lo = min(float(np.min(t[key])) for t in tiles)
+        hi = max(float(np.max(t[key])) for t in tiles)
+        axes.append((lo, int(round((hi - lo) / spacing[k])) + 1))
+    idx = []
+    for t in tiles:
+        ti = []
+        for k, key in enumerate('XYZ'):
+            f = (np.asarray(t[key], dtype=float) - axes[k][0]) / spacing[k]
+            if np.max(np.abs(f - np.rint(f))) > tol:
+                raise ValueError("tiles are not on a common lattice along %s" % key)
+            ti.append(np.rint(f).astype(int))
+        idx.append(ti)
+    names = list(tiles[0]['fields'])
+    Nt = tiles[0]['fields'][names[0]].shape[0]
+    shape = tuple(n for _, n in axes)
+    merged = {n: np.zeros((Nt,) + shape + tiles[0]['fields'][n].shape[4:]) for n in names}
+    present = np.zeros(shape, dtype=bool)
+    for t, (ix, iy, iz) in zip(tiles, idx):
+        sel = np.ix_(ix, iy, iz)
+        for n in names:
+            if t['fields'][n].shape[0] != Nt:
+                raise ValueError("tiles have different numbers of time slices")
+            merged[n][(slice(None),) + sel] = t['fields'][n]
+        present[sel] = True
+    return {'X': axes[0][0] + spacing[0] * np.arange(shape[0]),
+            'Y': axes[1][0] + spacing[1] * np.arange(shape[1]),
+            'Z': axes[2][0] + spacing[2] * np.arange(shape[2]),
+            'fields': merged, 'present': present}
