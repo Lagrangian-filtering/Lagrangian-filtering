@@ -124,6 +124,36 @@ class TestOhmsRegression(unittest.TestCase):
         self.assertEqual(OR._edges(9, 4), [(0, 4), (4, 9)])             # remainder 1 < 2: merged
         self.assertEqual(OR._edges(8, 4), [(0, 4), (4, 8)])
 
+    def test_box_sum_matches_brute_force_with_clipped_edges(self):
+        rng = np.random.default_rng(0)
+        a = rng.normal(size=(6, 5, 4))
+        got = OR.box_sum(a, (3, 3, 1))
+        for i, j, k in [(0, 0, 0), (2, 3, 1), (5, 4, 3), (0, 4, 2)]:
+            ref = a[max(i - 1, 0):i + 2, max(j - 1, 0):j + 2, k:k + 1].sum()
+            self.assertAlmostEqual(got[i, j, k], ref)
+
+    def test_local_maps_pick_the_right_term_in_each_half(self):
+        # left half: E = 0.3 J (resistive); right half: E = 0.5 J x B (Hall)
+        EL, ops = synthetic(shape=(1, 16, 16, 8), R=0.3, alpha=0.0, gamma=0.0, noise=0.01, seed=7)
+        EH, _ = synthetic(shape=(1, 16, 16, 8), R=0.0, alpha=0.0, gamma=0.5, noise=0.01, seed=7)
+        E = EL.copy(); E[:, 8:] = EH[:, 8:]
+        maps = OR.local_term_maps(E, ops, (5, 5, 3))
+        win = OR.winner_map(maps['R2'], threshold=0.3)
+        self.assertTrue(np.all(win[:5][maps['valid'][:5]] == 0))     # R (index 0) on the left
+        self.assertTrue(np.all(win[11:][maps['valid'][11:]] == 2))   # gamma (index 2) on the right
+        self.assertAlmostEqual(float(np.median(maps['coeff'][0][:5])), 0.3, delta=0.03)
+        self.assertGreater(float(np.nanmedian(maps['R2_full'])), 0.9)
+
+    def test_winner_none_below_threshold_and_null_threshold_is_small_for_unrelated_fields(self):
+        rng = np.random.default_rng(8)
+        shape = (1, 16, 16, 8)
+        E = self.smooth_field(shape, rng)
+        ops = {t: self.smooth_field(shape, rng) for t in OR.TERMS}
+        thr = OR.local_null_threshold(E, ops, (5, 5, 3), n_null=10)
+        self.assertTrue(0.0 < thr < 1.0)
+        maps = OR.local_term_maps(E, ops, (5, 5, 3))
+        self.assertTrue(np.all(OR.winner_map(maps['R2'], threshold=2.0) == -1))
+
 
 if __name__ == '__main__':
     unittest.main()

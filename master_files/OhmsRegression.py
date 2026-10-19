@@ -148,3 +148,90 @@ def summarize(values):
         return {'median': np.nan, 'p16': np.nan, 'p84': np.nan, 'frac_pos': np.nan, 'n': 0}
     p16, med, p84 = np.percentile(v, [16, 50, 84])
     return {'median': med, 'p16': p16, 'p84': p84, 'frac_pos': float(np.mean(v > 0)), 'n': len(v)}
+
+
+# ---------------------------------------------------------------------------------------
+# Local (sliding-window) fits, for maps of which term describes E_tilde where
+# ---------------------------------------------------------------------------------------
+
+def box_sum(a, window):
+    """
+    Sum of a 3D array over a (wx, wy, wz) box (odd sizes) centred on each point; the box is
+    clipped at the array edges. Uses cumulative sums, so it is O(N) whatever the window.
+    """
+    out = np.asarray(a, dtype=float)
+    for axis, w in enumerate(window):
+        n = out.shape[axis]
+        h = int(w) // 2
+        csum = np.concatenate([np.zeros_like(np.take(out, [0], axis=axis)), np.cumsum(out, axis=axis)], axis=axis)
+        idx = np.arange(n)
+        hi = np.minimum(idx + h + 1, n)
+        lo = np.maximum(idx - h, 0)
+        out = np.take(csum, hi, axis=axis) - np.take(csum, lo, axis=axis)
+    return out
+
+
+def local_term_maps(E5, ops5, window, min_fraction=0.5):
+    """
+    Constant-coefficient fits in a sliding spatial window around every meso point (all time
+    slices are included in the window sums).
+
+    E5, ops5[term]: (Nt, Nx, Ny, Nz, 4); window: odd (wx, wy, wz) in meso cells.
+    Returns a dict of (Nx, Ny, Nz) arrays: 'R2' (3, ...) the single-term R2 for each of
+    TERMS, 'coeff' (3, ...) the single-term coefficients, 'R2_full' for all three terms,
+    and 'valid' (windows with at least min_fraction of their full volume inside the grid).
+    """
+    names = TERMS
+    E5 = np.asarray(E5, dtype=float)
+    O = [np.asarray(ops5[t], dtype=float) for t in names]
+
+    def tsum(x):
+        return box_sum(x.sum(axis=0), window)
+
+    EE = tsum(mink_dot(E5, E5))
+    r = np.stack([tsum(mink_dot(o, E5)) for o in O])
+    G = np.empty(EE.shape + (3, 3))
+    for i in range(3):
+        for j in range(i, 3):
+            G[..., i, j] = G[..., j, i] = tsum(mink_dot(O[i], O[j]))
+    gdiag = np.stack([G[..., k, k] for k in range(3)])
+    with np.errstate(divide='ignore', invalid='ignore'):
+        R2 = r ** 2 / (gdiag * EE)
+        coeff = r / gdiag
+        c_full = np.einsum('...ij,...j->...i', np.linalg.pinv(G), np.moveaxis(r, 0, -1))
+        R2_full = np.sum(c_full * np.moveaxis(r, 0, -1), axis=-1) / EE
+    R2 = np.where((gdiag > 0) & (EE > 0), R2, np.nan)
+    count = box_sum(np.ones(EE.shape), window)
+    valid = count >= min_fraction * np.prod(window)
+    return {'R2': R2, 'coeff': coeff, 'R2_full': R2_full, 'valid': valid}
+
+
+def winner_map(R2, threshold):
+    """Index into TERMS of the best single term (0, 1, 2); -1 where none exceeds threshold or R2 is NaN."""
+    R2 = np.asarray(R2)
+    best = np.nanargmax(np.where(np.isnan(R2), -np.inf, R2), axis=0)
+    top = np.take_along_axis(R2, best[None], axis=0)[0]
+    return np.where(np.isfinite(top) & (top >= threshold), best, -1)
+
+
+def local_null_threshold(E5, ops5, window, n_null=20, min_shift=None, q=95.0, seed=0):
+    """
+    Chance level for the best single-term local R2: the q-th percentile, over valid points,
+    of the best single-term R2 when E is circularly shifted (as in shift_null) so that its
+    alignment with the operators is broken but its spatial structure is kept.
+    """
+    rng = np.random.default_rng(seed)
+    E5 = np.asarray(E5, dtype=float)
+    min_shift = int(max(window)) if min_shift is None else min_shift
+    lengths = E5.shape[1:4]
+    shiftable = [n >= 2 * min_shift + 1 for n in lengths]
+    if not any(shiftable):
+        raise ValueError("grid %s too small to shift by at least %d cells" % (lengths, min_shift))
+    best = []
+    for _ in range(n_null):
+        shifts = [int(rng.integers(min_shift, n - min_shift + 1)) if ok else 0
+                  for n, ok in zip(lengths, shiftable)]
+        m = local_term_maps(np.roll(E5, shift=shifts, axis=(1, 2, 3)), ops5, window)
+        top = np.nanmax(np.where(np.isnan(m['R2']), -np.inf, m['R2']), axis=0)
+        best.append(top[m['valid'] & np.isfinite(top)])
+    return float(np.percentile(np.concatenate(best), q))
