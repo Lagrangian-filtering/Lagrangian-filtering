@@ -46,6 +46,7 @@ def main():
                    help="tile size in meso cells (all time slices are included in a tile)")
     p.add_argument("--min-points", type=int, default=100, help="skip tiles with fewer points")
     p.add_argument("--n-null", type=int, default=100)
+    p.add_argument("--label", default="", help="stored in the npz, e.g. the filter width of a scan")
     p.add_argument("--min-shift", type=int, default=3,
                    help="minimum circular shift (meso cells) for the correlation-preserving null")
     p.add_argument("--outdir", default=".")
@@ -97,6 +98,9 @@ def main():
              global_R2=np.array([r['fit']['R2'] for r in results]),
              null_R2=np.array([r['null'] for r in results]),
              shift_null_R2=np.array([r['shnull'] for r in results]),
+             label=a.label,
+             global_coeffs=np.array([[r['fit'][t] for t in OR.TERMS] for r in results]),
+             R_only_tile_R_tilde=np.array([x['R_tilde'] for x in results[0]['tiles']]),
              full_tile_R_tilde=np.array([x['R_tilde'] for x in full['tiles']]),
              full_tile_alpha=np.array([x['alpha_dynamo'] for x in full['tiles']]),
              full_tile_gamma=np.array([x['gamma_hall'] for x in full['tiles']]),

@@ -47,6 +47,9 @@ def main():
     p.add_argument("--box-len", type=float, default=6.0, help="observer-search box side L in dx")
     p.add_argument("--num-t-slices", type=int, default=3, help="odd number of meso time slices")
     p.add_argument("--coarse", type=int, default=4, help="meso grid spacing in micro cells")
+    p.add_argument("--pad-cells", type=int, default=0,
+                   help="minimum margin (cells) between the crop faces and the meso grid; use the same "
+                        "value for every run of a filter-width scan so the meso grids are identical")
     p.add_argument("--n-cpus", type=int, default=16)
     p.add_argument("--partition", default="batch")
     p.add_argument("--pickled-dir", default=None, help="default: <hdf5_dir>/pickled")
@@ -107,7 +110,7 @@ def main():
     # Crop and the interior region the meso grid may occupy
     size = a.crop_size
     start = a.crop_start or [(N - s) // 2 for N, s in zip(shape, size)]
-    pad = int(math.ceil(reach)) + 2
+    pad = max(int(math.ceil(reach)) + 2, a.pad_cells)
     for ax, (N, s0, sz) in enumerate(zip(shape, start, size)):
         if s0 < 0 or s0 + sz > N:
             sys.exit("Crop axis %d [%d, %d) outside the domain 0..%d" % (ax, s0, s0 + sz, N))
