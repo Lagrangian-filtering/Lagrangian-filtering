@@ -11,7 +11,8 @@ covered are blank.
     python mosaic_ohms_winner.py '/scratch/.../pickled/resMHD3d_khi576_m_*.pickle' --outdir mosaic
 
 Writes mosaic_winner.png and mosaic_maps.npz. Non-interactive (Agg). The figure shows the xy plane at
-the chosen z index: winner | best local R2 | local R_tilde | local gamma | filtered density | |B_tilde|^2.
+the chosen z index: winner | best local R2 | local R_tilde | local gamma | filtered density | |B_tilde|^2 |
+sub-filter B^2 (<B^2> - |<B>|^2, when every crop pickle has it).
 """
 import argparse
 import glob
@@ -64,12 +65,18 @@ def main():
                       'Z': np.asarray(m.domain_vars['Z'], dtype=float),
                       'fields': {k: np.asarray(v[n], dtype=float) for k, n in
                                  (('E', 'E_tilde'), ('J', 'J_tilde'), ('B', 'B_tilde'), ('u', 'u_tilde'), ('n', 'n_tilde'))}})
+        if 'B2_sub' in v and np.any(np.asarray(v['B2_sub']) != 0):
+            tiles[-1]['fields']['S'] = np.asarray(v['B2_sub'], dtype=float)
         if spacing is None:
             spacing = tuple(float(m.domain_vars[k]) for k in ('Dx', 'Dy', 'Dz'))
             metric = np.array(m.metric)
         del m, v
         print("loaded %s in %.1f s" % (os.path.basename(f), time.time() - t0), flush=True)
 
+    if not all('S' in t['fields'] for t in tiles):       # sub-filter energy only if every crop has it
+        for t in tiles:
+            t['fields'].pop('S', None)
+        print("note: not every pickle has B2_sub; sub-filter energy panel omitted")
     mer = OR.merge_meso_tiles(tiles, spacing)
     del tiles
     F = mer['fields']
@@ -93,9 +100,10 @@ def main():
 
     n_map = np.where(present, F['n'].mean(axis=0), np.nan)
     B2_map = np.where(present, OR.mink_dot(F['B'], F['B']).mean(axis=0), np.nan)
+    S_map = np.where(present, F['S'].mean(axis=0), np.nan) if 'S' in F else None
     os.makedirs(a.outdir, exist_ok=True)
     np.savez(os.path.join(a.outdir, "mosaic_maps.npz"), winner=win, best_R2=best, R2=maps['R2'], coeff=maps['coeff'],
-             n_tilde=n_map, B2_tilde=B2_map, present=present, threshold=thr, X=X, Y=Y, Z=Z)
+             n_tilde=n_map, B2_tilde=B2_map, B2_sub=(S_map if S_map is not None else np.nan), present=present, threshold=thr, X=X, Y=Y, Z=Z)
 
     iz = a.z_index if a.z_index is not None else len(Z) // 2
     dX, dY = spacing[0], spacing[1]
@@ -103,7 +111,7 @@ def main():
     take = lambda f: f[:, :, iz].T
     cmap = ListedColormap(['white'] + COLOURS)
     norm = BoundaryNorm(np.arange(-2.5, 3.5, 1.0), cmap.N)
-    fig, axes = plt.subplots(2, 3, figsize=(24, 16), constrained_layout=True)
+    fig, axes = plt.subplots(2, 4, figsize=(32, 16), constrained_layout=True)
     ax = axes.ravel()
     ax[0].imshow(take(win), origin='lower', extent=ext, cmap=cmap, norm=norm, interpolation='nearest')
     ax[0].set_title("winner, xy-plane at z = %.3f" % Z[iz])
@@ -113,6 +121,8 @@ def main():
               (np.where(valid, maps['coeff'][2], np.nan), "local gamma (single-term)", "RdBu_r", True),
               (n_map, "filtered density n_tilde", "viridis", False),
               (B2_map, "|B_tilde|^2", "magma", False)]
+    if S_map is not None:
+        panels.append((S_map, "sub-filter B^2 = <B^2> - |<B>|^2", "magma", False))
     for k, (f, title, cm, sym) in enumerate(panels, start=1):
         d = take(f)
         kw = {}
@@ -122,7 +132,9 @@ def main():
         im = ax[k].imshow(d, origin='lower', extent=ext, cmap=cm, interpolation='nearest', **kw)
         ax[k].set_title(title)
         fig.colorbar(im, ax=ax[k], shrink=0.8)
-    for a_ in ax:
+    for a_ in ax[len(panels) + 1:]:
+        a_.axis('off')
+    for a_ in ax[:len(panels) + 1]:
         a_.set_xlabel("x"); a_.set_ylabel("y"); a_.set_aspect('equal')
     fig.suptitle("Ohm's-law winner mosaic: %d crops, window %s meso cells" % (len(files), window))
     fig.savefig(os.path.join(a.outdir, "mosaic_winner.png"), dpi=a.dpi)
