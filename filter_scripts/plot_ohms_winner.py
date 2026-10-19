@@ -13,7 +13,9 @@ cell means "better than chance", not just "best of three". Override it with --mi
 
 Writes ohms_winner.png and ohms_winner_maps.npz to --outdir. Non-interactive (Agg).
 Rows: xy plane at the chosen z index, xz plane at the chosen y index.
-Columns: winner | best local R2 | local R_tilde (single-term fit) | local gamma (single-term fit).
+Columns: winner | best local R2 | local R_tilde (single-term fit) | local gamma (single-term fit)
+| filtered density n_tilde | |B_tilde|^2 (the filtered field's own energy, B_tilde.B_tilde; this is not the
+filter of B^2, which these pickles do not contain). Density and |B_tilde|^2 are averaged over time slices.
 """
 import argparse
 import os
@@ -61,6 +63,8 @@ def main():
     H = np.einsum('abcd,...b,...c,...d->...a', levi_upper, J, u, B)   # same Hall operator as the fit
     ops = {'R_tilde': J, 'alpha_dynamo': B, 'gamma_hall': H}
     X, Y, Z = (np.asarray(m.domain_vars[k], dtype=float) for k in 'XYZ')
+    n_mean = np.asarray(v['n_tilde'], dtype=float).mean(axis=0)
+    B2_mean = OR.mink_dot(B, B).mean(axis=0)
 
     maps = OR.local_term_maps(E, ops, window)
     thr = a.min_r2 if a.min_r2 is not None else OR.local_null_threshold(E, ops, window, n_null=a.n_null)
@@ -76,7 +80,7 @@ def main():
 
     os.makedirs(a.outdir, exist_ok=True)
     np.savez(os.path.join(a.outdir, "ohms_winner_maps.npz"), winner=win, best_R2=best, R2=maps['R2'],
-             coeff=maps['coeff'], R2_full=maps['R2_full'], threshold=thr, X=X, Y=Y, Z=Z)
+             coeff=maps['coeff'], R2_full=maps['R2_full'], n_tilde=n_mean, B2_tilde=B2_mean, threshold=thr, X=X, Y=Y, Z=Z)
 
     iz = a.z_index if a.z_index is not None else len(Z) // 2
     iy = a.y_index if a.y_index is not None else len(Y) // 2
@@ -90,7 +94,7 @@ def main():
 
     cmap = ListedColormap(['white'] + COLOURS)       # -2 white, -1 grey, 0 red, 1 green, 2 blue
     norm = BoundaryNorm(np.arange(-2.5, 3.5, 1.0), cmap.N)
-    fig, axes = plt.subplots(2, 4, figsize=(20, 8), constrained_layout=True)
+    fig, axes = plt.subplots(2, 6, figsize=(29, 8), constrained_layout=True)
     cR, cG = maps['coeff'][0], maps['coeff'][2]
     lim = lambda f: np.nanpercentile(np.abs(f[maps['valid']]), 98) or 1.0
     for row, (plane, (a1, a2), take, where) in enumerate(planes):
@@ -107,7 +111,12 @@ def main():
                                        aspect='equal', interpolation='nearest')
             axes[row, col].set_title("%s (single-term fit)" % name)
             fig.colorbar(im, ax=axes[row, col], shrink=0.8)
-        for col in range(4):
+        for col, (f, name, cm) in enumerate(((n_mean, "filtered density n_tilde", "viridis"),
+                                             (B2_mean, "|B_tilde|^2", "magma")), start=4):
+            im = axes[row, col].imshow(take(f).T, origin='lower', extent=ext, cmap=cm, aspect='equal', interpolation='nearest')
+            axes[row, col].set_title(name)
+            fig.colorbar(im, ax=axes[row, col], shrink=0.8)
+        for col in range(6):
             axes[row, col].set_xlabel(plane[0]); axes[row, col].set_ylabel(plane[1])
     axes[0, 0].legend(handles=[Patch(color=c, label=l) for c, l in zip(COLOURS, LABELS)], loc='upper right', fontsize=8)
     fig.suptitle("%s   window %s meso cells   chance threshold %.3f" % (os.path.basename(a.pickle_file), window, thr))
