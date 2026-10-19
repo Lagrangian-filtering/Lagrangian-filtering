@@ -314,14 +314,18 @@ def merge_meso_tiles(tiles, spacing, tol=0.02):
 #     E~^a = u~_b <F^{ab}> = gamma (v~ . dE, dE),
 #     dE   = -<dv x dB> - (<v> - v~) x <B>,    <v> - v~ = -cov(D, v)/<D>.
 #
-# The filter averages over a 4D box in the observer's own frame. To second order in its width,
-# the covariance of two fluctuating fields is
+# The filter (Filters.box_filter_parallel) averages over a 3D SPATIAL box in the observer's rest space:
+# 27 Gauss points at point + sum_i c_i e_i, with e_i the three spatial legs of the tetrad orthogonal to u
+# (the time-like leg u is not averaged over). To second order in its width, the covariance of two
+# fluctuating fields is
 #
-#     cov(a, b) = sigma^2 [ grad a . grad b - d_t a d_t b + 2 (u.d a)(u.d b) ],
+#     cov(a, b) = sigma^2 [ grad a . grad b - d_t a d_t b + (u.d a)(u.d b) ],
 #
-# with sigma^2 = W^2/12 per box direction and u.d = gamma (d_t + v.grad) (this uses
-# sum over the tetrad e_a e_a = g + 2 u u, so it does not depend on how the spatial axes of the
-# box are oriented). Hence
+# with sigma^2 = W^2/12 per box direction (the 3-point quadrature reproduces the top-hat's moments through
+# 5th order) and u.d = gamma (d_t + v.grad). This uses sum_i e_i e_i = g + u u, so it does not depend on how
+# the spatial axes of the box are oriented. For a static observer it reduces to sigma^2 grad a . grad b.
+# (An earlier version assumed a 4D box, giving g + 2uu, i.e. a factor 2 on the last term: that was wrong.)
+# Hence
 #
 #     dE = -g1 + g2,   g1 = sigma^2 S(v, B) [cross products],   g2 = sigma^2 (S(D, v)/D) x <B>,
 #
@@ -340,21 +344,36 @@ def _expand(x, like):
     return x.reshape(x.shape + (1,) * (like.ndim - x.ndim))
 
 
-def covariance_bracket(a, b, v, gamma, spacings, dt, product):
+def covariance_bracket_parts(a, b, v, gamma, spacings, dt, product):
     """
-    sum_{mu nu} (g^{mu nu} + 2 u^mu u^nu) d_mu a (x) d_nu b, with (x) given by `product`:
-    grad a (x) grad b - d_t a (x) d_t b + 2 gamma^2 (Dt a) (x) (Dt b), Dt = d_t + v.grad.
-    Multiply by sigma^2 to get the second-order covariance.
+    The four pieces of the covariance bracket, split by the kind of derivative:
+      'ss' = sum_l d_l a (x) d_l b                        (spatial gradients, from the metric)
+      'tt' = (gamma^2 - 1) d_t a (x) d_t b                (time derivatives)
+      'ts' = gamma^2 [d_t a (x) (v.grad) b + (v.grad) a (x) d_t b]      (time-advective cross terms)
+      'vv' = gamma^2 (v.grad) a (x) (v.grad) b            (advective)
+    Their sum is  grad a . grad b - d_t a d_t b + gamma^2 (Dt a)(Dt b)  with Dt = d_t + v.grad
+    (= grad a . grad b for a static observer).
+    The time pieces are zero when dt is None or Nt < 3.
     """
     da, db = lab_derivatives(a, spacings, dt), lab_derivatives(b, spacings, dt)
 
-    def material(d, f):
-        return d[0] + sum(_expand(v[..., l], f) * d[l + 1] for l in range(3))
+    def advect(d):
+        return sum(_expand(v[..., l], d[0]) * d[l + 1] for l in range(3))
 
-    spatial = sum(product(da[l + 1], db[l + 1]) for l in range(3))
-    time_part = -product(da[0], db[0])
-    adv = product(material(da, a), material(db, b)) * _expand(2.0 * gamma ** 2, product(da[0], db[0]))
-    return spatial + time_part + adv
+    tt0 = product(da[0], db[0])
+    g2 = _expand(gamma ** 2, tt0)
+    return {'ss': sum(product(da[l + 1], db[l + 1]) for l in range(3)),
+            'tt': (g2 - 1.0) * tt0,
+            'ts': g2 * (product(da[0], advect(db)) + product(advect(da), db[0])),
+            'vv': g2 * product(advect(da), advect(db))}
+
+
+def covariance_bracket(a, b, v, gamma, spacings, dt, product):
+    """
+    sum_{mu nu} (g^{mu nu} + u^mu u^nu) d_mu a (x) d_nu b = the sum of covariance_bracket_parts.
+    Multiply by sigma^2 to get the second-order covariance.
+    """
+    return sum(covariance_bracket_parts(a, b, v, gamma, spacings, dt, product).values())
 
 
 def _cross(x, y):
@@ -391,6 +410,24 @@ def gradient_model_operators(v, B, D, u, spacings, sigma2, dt=None):
     g2 = sigma2 * np.cross(T / D[..., None], B)
     O1, O2 = observer_electric(g1, v, gamma), observer_electric(g2, v, gamma)
     return {'model_vB': O1, 'model_dens': O2, 'prediction': -O1 + O2}
+
+
+def gradient_model_parts(v, B, D, u, spacings, sigma2, dt=None):
+    """
+    The gradient-model operators split into the four covariance pieces ('ss', 'tt', 'ts', 'vv'):
+    keys 'vB_<piece>' (each with expected coefficient -1) and 'dens_<piece>' (expected +1), each a 4-vector
+    of shape (...,4). Summing the 'vB_' pieces gives gradient_model_operators()['model_vB'], and likewise
+    for 'dens_' and 'model_dens'.
+    """
+    gamma = u[..., 0]
+    pv = covariance_bracket_parts(v, B, v, gamma, spacings, dt, _cross)
+    pd = covariance_bracket_parts(D, v, v, gamma, spacings, dt, _scalar_times_vector)
+    out = {}
+    for k, g in pv.items():
+        out['vB_' + k] = observer_electric(sigma2 * g, v, gamma)
+    for k, T in pd.items():
+        out['dens_' + k] = observer_electric(sigma2 * np.cross(T / D[..., None], B), v, gamma)
+    return out
 
 
 def prediction_r2(E, pred):

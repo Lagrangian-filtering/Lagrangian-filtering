@@ -111,6 +111,14 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
                         '--min-points', '20', '--n-null', '4', '--outdir', out)
         self.assertTrue(os.path.exists(os.path.join(out, 'gradient_model.npz')))
 
+    def test_regress_covariance_split(self):
+        out = os.path.join(self.tmp, 'split')
+        self.run_script('regress_covariance_split.py', self.write_pickle('a.pickle'), '--block', '6', '6', '3',
+                        '--min-points', '20', '--n-null', '3', '--outdir', out)
+        d = np.load(os.path.join(out, 'covariance_split.npz'))
+        self.assertEqual(list(d['pieces']), ['ss', 'tt', 'ts', 'vv'])      # 3 slices: all four pieces
+        self.assertEqual(d['vB_joint_coeffs'].shape, (4,))
+
     def test_gradient_scan_summary(self):
         # two "widths" through the label mechanism the scan scripts use, then the summarizer
         root = os.path.join(self.tmp, 'gscan')

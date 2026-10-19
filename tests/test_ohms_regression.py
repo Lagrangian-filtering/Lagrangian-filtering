@@ -195,13 +195,13 @@ class TestOhmsRegression(unittest.TestCase):
         np.testing.assert_allclose(ops['model_dens'], 0.0, atol=1e-12)    # uniform density: no weighting term
 
     def test_gradient_model_advective_term(self):
-        # advection speed 0.5 along x adds 2 gamma^2 (Dt v x Dt B) with Dt = 0.5 d_x: extra 2 g^2 (0.25) a b
+        # advection speed 0.5 along x adds gamma^2 (Dt v x Dt B) with Dt = 0.5 d_x: extra g^2 (0.25) a b
         gam = 2.0
         v, B, D, u = self.linear_fields(vx=0.5, gamma=gam)
         u[..., 0] = gam; u[..., 1:] = gam * v   # keep gamma as given (not 1/sqrt(1-v^2)); only the algebra is tested
         ops = OR.gradient_model_operators(v, B, D, u, (1.0, 1.0, 1.0), sigma2=1.0)
         a, b = 2.0, 3.0
-        expect = a * b + 2 * gam ** 2 * 0.25 * a * b
+        expect = a * b + gam ** 2 * 0.25 * a * b
         self.assertAlmostEqual(float(ops['model_vB'][0, 2, 2, 2, 1] / gam), expect, places=6)
 
     def test_observer_electric_is_orthogonal_to_the_observer(self):
@@ -267,6 +267,46 @@ class TestOhmsRegression(unittest.TestCase):
         ops = OR.standard_operators(J, B, u, eps, metric)
         self.assertEqual(sorted(ops), sorted(OR.TERMS))
 
+    def test_covariance_parts_sum_to_the_operators_and_time_parts_vanish_without_time(self):
+        rng = np.random.default_rng(11)
+        shape = (3, 8, 8, 6)
+        v = rng.uniform(-0.4, 0.4, shape + (3,))
+        gam = 1.0 / np.sqrt(1.0 - np.sum(v ** 2, axis=-1))
+        u = np.zeros(shape + (4,)); u[..., 0] = gam; u[..., 1:] = gam[..., None] * v
+        B = self.smooth_field(shape, rng)[..., 1:]
+        D = 1.0 + 0.2 * self.smooth_field(shape, rng)[..., 1]
+        sp = (0.1, 0.1, 0.1)
+        for dt in (0.1, None):
+            parts = OR.gradient_model_parts(v, B, D, u, sp, 0.3, dt)
+            ops = OR.gradient_model_operators(v, B, D, u, sp, 0.3, dt)
+            np.testing.assert_allclose(sum(parts['vB_' + k] for k in ('ss', 'tt', 'ts', 'vv')), ops['model_vB'], atol=1e-10)
+            np.testing.assert_allclose(sum(parts['dens_' + k] for k in ('ss', 'tt', 'ts', 'vv')), ops['model_dens'], atol=1e-10)
+        for k in ('vB_tt', 'vB_ts', 'dens_tt', 'dens_ts'):      # dt=None: no time derivatives
+            np.testing.assert_allclose(parts[k], 0.0, atol=1e-14)
+        self.assertGreater(float(np.abs(OR.gradient_model_parts(v, B, D, u, sp, 0.3, 0.1)['vB_tt']).max()), 1e-6)
+
+    def test_covariance_parts_match_hand_calculation(self):
+        gam = 2.0
+        v, B, D, u = self.linear_fields(vx=0.5, gamma=gam)
+        parts = OR.gradient_model_parts(v, B, D, u, (1.0, 1.0, 1.0), 1.0)
+        a, b = 2.0, 3.0
+        # ss = d_x v x d_x B = (a b, 0, 0); vv = gam^2 (0.5 d_x v) x (0.5 d_x B) = gam^2 0.25 a b
+        self.assertAlmostEqual(float(parts['vB_ss'][0, 2, 2, 2, 1] / gam), a * b, places=6)
+        self.assertAlmostEqual(float(parts['vB_vv'][0, 2, 2, 2, 1] / gam), gam ** 2 * 0.25 * a * b, places=6)
+
+    def test_static_observer_covariance_is_purely_spatial(self):
+        # advecting velocity 0 and gamma 1: the 3D spatial box has no time-derivative content,
+        # even for fields that vary in time (tt = (gamma^2-1) ..., ts, vv all vanish)
+        rng = np.random.default_rng(12)
+        shape = (3, 8, 8, 6)
+        a = self.smooth_field(shape, rng)[..., 1:]; b = self.smooth_field(shape, rng)[..., 1:]
+        v = np.zeros(shape + (3,)); gam = np.ones(shape)
+        with_time = OR.covariance_bracket_parts(a, b, v, gam, (0.1,) * 3, 0.1, np.cross)
+        without = OR.covariance_bracket_parts(a, b, v, gam, (0.1,) * 3, None, np.cross)
+        np.testing.assert_allclose(with_time['ss'], without['ss'], atol=1e-12)
+        for k in ('tt', 'ts', 'vv'):
+            np.testing.assert_allclose(with_time[k], 0.0, atol=1e-12)
+        self.assertGreater(float(np.abs(with_time['ss']).max()), 1e-3)
 
 if __name__ == '__main__':
     unittest.main()
