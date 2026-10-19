@@ -21,6 +21,23 @@ import numpy as np
 TERMS = ('R_tilde', 'alpha_dynamo', 'gamma_hall')
 
 
+def hall_operator(J, u, B, levi_upper, metric):
+    """
+    Hall^a = eps^{abcd} J_b u_c B_d (covariant: the vectors are lowered with the metric before the
+    contraction). levi_upper = eps^{abcd}, e.g. Base.raise_LeviCivita4D(metric). The result is
+    orthogonal to u exactly, and for the static observer u = (1,0,0,0) its spatial part is J x B.
+    (Contracting eps^{abcd} with the UPPER-index components, as an earlier version did, gives a vector
+    that is not orthogonal to a moving observer and so cannot represent a term of E~, which is.)
+    """
+    lower = lambda x: np.einsum('ab,...b->...a', metric, x)
+    return np.einsum('abcd,...b,...c,...d->...a', levi_upper, lower(J), lower(u), lower(B))
+
+
+def standard_operators(J, B, u, levi_upper, metric):
+    """The three Ohm's-law operators {R_tilde: J, alpha_dynamo: B, gamma_hall: Hall}."""
+    return {'R_tilde': J, 'alpha_dynamo': B, 'gamma_hall': hall_operator(J, u, B, levi_upper, metric)}
+
+
 def mink_dot(a, b):
     """Minkowski product (-+++) over the last axis."""
     return -a[..., 0] * b[..., 0] + np.sum(a[..., 1:] * b[..., 1:], axis=-1)

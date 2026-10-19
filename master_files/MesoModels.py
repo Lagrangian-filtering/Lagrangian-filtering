@@ -7,6 +7,7 @@ Created on Mon Mar 27 18:53:53 2023
 
 import numpy as np
 from scipy.interpolate import interpn 
+import OhmsRegression
 import multiprocessing as mp
 from multimethod import multimethod
 
@@ -2767,8 +2768,7 @@ class resMHD_3D(resHD_3D):
         if use_dynamo:
             names.append('alpha_dynamo'); operators.append(B_tilde)
         if use_hall:
-            levi_upper = Base.raise_LeviCivita4D(metric)
-            hall = np.einsum('abcd,b,c,d->a', levi_upper, J_tilde, u_tilde, B_tilde)
+            hall = OhmsRegression.hall_operator(J_tilde, u_tilde, B_tilde, Base.raise_LeviCivita4D(metric), metric)
             names.append('gamma_hall'); operators.append(hall)
 
         coeffs = {'R_tilde': np.nan, 'alpha_dynamo': np.nan, 'gamma_hall': np.nan}

@@ -57,8 +57,8 @@ def main():
         print("WARNING: only %d time slice(s): time derivatives set to zero, the model is INCOMPLETE" % Nt)
 
     g = OR.gradient_model_operators(vel, B_lab[..., 1:], D, u, spacings, sigma2, dt)
-    H = np.einsum('abcd,...b,...c,...d->...a', Base.raise_LeviCivita4D(m.metric), J, u, B)
-    ops = {'R_tilde': J, 'alpha_dynamo': B, 'gamma_hall': H, 'model_vB': g['model_vB'], 'model_dens': g['model_dens']}
+    ops = OR.standard_operators(J, B, u, Base.raise_LeviCivita4D(m.metric), m.metric)
+    ops.update({'model_vB': g['model_vB'], 'model_dens': g['model_dens']})
 
     t_sl = slice(Nt // 2, Nt // 2 + 1) if Nt >= 3 else slice(None)
     s_sl = tuple(slice(1, -1) if n >= 3 else slice(None) for n in E.shape[1:4])

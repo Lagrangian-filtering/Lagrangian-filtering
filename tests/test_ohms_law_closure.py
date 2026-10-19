@@ -7,13 +7,30 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'master_files'))
 from system.BaseFunctionality import Base
 from MesoModels import resMHD_3D
+import OhmsRegression
 
 METRIC = np.diag([-1., 1., 1., 1.])
 
 
 def hall_operand(J, u, B, metric):
-    levi_upper = Base.raise_LeviCivita4D(metric)
-    return np.einsum('abcd,b,c,d->a', levi_upper, J, u, B)
+    return OhmsRegression.hall_operator(J, u, B, Base.raise_LeviCivita4D(metric), metric)
+
+
+class TestHallOperatorCovariance(unittest.TestCase):
+    """The Hall operator must be orthogonal to the observer, as E~ is (a static observer cannot show this)."""
+    def test_orthogonal_to_a_moving_observer_and_equals_JxB_when_static(self):
+        rng = np.random.default_rng(0)
+        v = rng.uniform(-0.5, 0.5, 3); g = 1.0 / np.sqrt(1.0 - v @ v)
+        u = np.r_[g, g * v]
+        mink = lambda a, b: -a[0] * b[0] + a[1:] @ b[1:]
+        def orth(x3):
+            x = np.r_[0.0, x3]
+            return x + u * mink(u, x)             # a 4-vector orthogonal to u, like J~ and B~
+        J, B = orth(rng.normal(size=3)), orth(rng.normal(size=3))
+        H = hall_operand(J, u, B, METRIC)
+        self.assertAlmostEqual(mink(u, H), 0.0, places=12)
+        u0 = np.array([1.0, 0.0, 0.0, 0.0]); J0 = np.r_[0.0, rng.normal(size=3)]; B0 = np.r_[0.0, rng.normal(size=3)]
+        np.testing.assert_allclose(hall_operand(J0, u0, B0, METRIC)[1:], np.cross(J0[1:], B0[1:]), atol=1e-12)
 
 
 class TestOhmsLawFitGridpoint(unittest.TestCase):

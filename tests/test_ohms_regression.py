@@ -237,6 +237,36 @@ class TestOhmsRegression(unittest.TestCase):
         self.assertGreater(real, 0.8)
         self.assertLess(null.max(), real - 0.5)
 
+    @staticmethod
+    def levi_upper_minkowski():
+        """eps^{abcd} for metric diag(-1,1,1,1) with eps_{0123} = +1, built independently of Base."""
+        import itertools
+        eps = np.zeros((4, 4, 4, 4))
+        for perm in itertools.permutations(range(4)):
+            sign = np.linalg.det(np.eye(4)[list(perm)])
+            eps[perm] = -sign                      # raising four indices with diag(-1,1,1,1) multiplies by -1
+        return eps
+
+    def test_hall_operator_is_orthogonal_to_observer_and_JxB_when_static(self):
+        metric = np.diag([-1.0, 1.0, 1.0, 1.0]); eps = self.levi_upper_minkowski()
+        rng = np.random.default_rng(3)
+        v = rng.uniform(-0.5, 0.5, (2, 3, 3)); g = 1.0 / np.sqrt(1.0 - np.sum(v ** 2, axis=-1))
+        u = np.zeros(v.shape[:-1] + (4,)); u[..., 0] = g; u[..., 1:] = g[..., None] * v
+        def orth(x3):
+            x = np.zeros(v.shape[:-1] + (4,)); x[..., 1:] = x3
+            return x + u * OR.mink_dot(u, x)[..., None]
+        J, B = orth(rng.normal(size=v.shape)), orth(rng.normal(size=v.shape))
+        H = OR.hall_operator(J, u, B, eps, metric)
+        np.testing.assert_allclose(OR.mink_dot(u, H), 0.0, atol=1e-10)
+        # static observer: spatial part is J x B
+        u0 = np.zeros_like(u); u0[..., 0] = 1.0
+        J0 = np.zeros_like(u); J0[..., 1:] = rng.normal(size=v.shape)
+        B0 = np.zeros_like(u); B0[..., 1:] = rng.normal(size=v.shape)
+        np.testing.assert_allclose(OR.hall_operator(J0, u0, B0, eps, metric)[..., 1:],
+                                   np.cross(J0[..., 1:], B0[..., 1:]), atol=1e-12)
+        ops = OR.standard_operators(J, B, u, eps, metric)
+        self.assertEqual(sorted(ops), sorted(OR.TERMS))
+
 
 if __name__ == '__main__':
     unittest.main()

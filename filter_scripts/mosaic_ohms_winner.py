@@ -80,8 +80,7 @@ def main():
     mer = OR.merge_meso_tiles(tiles, spacing)
     del tiles
     F = mer['fields']
-    H = np.einsum('abcd,...b,...c,...d->...a', Base.raise_LeviCivita4D(metric), F['J'], F['u'], F['B'])
-    ops = {'R_tilde': F['J'], 'alpha_dynamo': F['B'], 'gamma_hall': H}
+    ops = OR.standard_operators(F['J'], F['B'], F['u'], Base.raise_LeviCivita4D(metric), metric)
     present = mer['present']
     X, Y, Z = mer['X'], mer['Y'], mer['Z']
     print("mosaic grid (Nx,Ny,Nz) = %s from %d crops; %.0f%% of lattice points covered" % (

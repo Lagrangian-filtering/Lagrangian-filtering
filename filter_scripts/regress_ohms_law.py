@@ -57,9 +57,7 @@ def main():
     v = m.meso_vars
     E, J, B, u = v['E_tilde'], v['J_tilde'], v['B_tilde'], v['u_tilde']
     # Same Hall operator as resMHD_3D.ohms_law_fit_gridpoint: eps^{abcd} J_b u_c B_d
-    levi_upper = Base.raise_LeviCivita4D(m.metric)
-    H = np.einsum('abcd,...b,...c,...d->...a', levi_upper, J, u, B)
-    ops = {'R_tilde': J, 'alpha_dynamo': B, 'gamma_hall': H}
+    ops = OR.standard_operators(J, B, u, Base.raise_LeviCivita4D(m.metric), m.metric)
     shape = E.shape[:4]
     print("meso grid (Nt,Nx,Ny,Nz) = %s, %d points; tile %s" % (shape, int(np.prod(shape)), tuple(a.block)))
 

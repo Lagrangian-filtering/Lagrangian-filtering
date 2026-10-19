@@ -59,9 +59,7 @@ def main():
         m = pickle.load(fh)
     v = m.meso_vars
     E, J, B, u = v['E_tilde'], v['J_tilde'], v['B_tilde'], v['u_tilde']
-    levi_upper = Base.raise_LeviCivita4D(m.metric)
-    H = np.einsum('abcd,...b,...c,...d->...a', levi_upper, J, u, B)   # same Hall operator as the fit
-    ops = {'R_tilde': J, 'alpha_dynamo': B, 'gamma_hall': H}
+    ops = OR.standard_operators(J, B, u, Base.raise_LeviCivita4D(m.metric), m.metric)   # same operators as the fit
     X, Y, Z = (np.asarray(m.domain_vars[k], dtype=float) for k in 'XYZ')
     n_mean = np.asarray(v['n_tilde'], dtype=float).mean(axis=0)
     B2_mean = OR.mink_dot(B, B).mean(axis=0)
