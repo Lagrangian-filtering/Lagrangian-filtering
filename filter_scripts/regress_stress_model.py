@@ -103,15 +103,14 @@ def main():
 
     rows = {}
     block = tuple(a.block)
-    report("pi^ab", pi_t, {'pi': pi_p}, w16, "+1", block, a.min_points, a.n_null, rows)
-    report("q^a", q_t, {'q1': q1, 'q2': q2}, wq, "+1, +1", block, a.min_points, a.n_null, rows)
+    report("pi", pi_t, {'pi': pi_p}, w16, "+1", block, a.min_points, a.n_null, rows)
+    report("q", q_t, {'q1': q1, 'q2': q2}, wq, "+1, +1", block, a.min_points, a.n_null, rows)
 
     os.makedirs(a.outdir, exist_ok=True)
     out = dict(label=a.label, sigma2=sigma2, filter_width=float(m.filter.filter_width), n_slices=Nt,
                pi_over_p=float(np.median(pn / pt)), q_over_enthalpy=float(np.median(qn / enth)))
     for name, r in rows.items():
-        tag = name[0]
-        out.update({tag + '_' + k: v for k, v in r.items()})
+        out.update({name + '_' + k: v for k, v in r.items()})
     np.savez(os.path.join(a.outdir, "stress_model.npz"), **out)
     print("Wrote stress_model.npz to %s" % a.outdir)
 

@@ -148,7 +148,7 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
                         '--min-points', '20', '--n-null', '3', '--outdir', out)
         d = np.load(os.path.join(out, 'stress_model.npz'))
         self.assertEqual(d['q_coeffs'].shape, (2,))
-        self.assertEqual(d['p_coeffs'].shape, (1,))
+        self.assertEqual(d['pi_coeffs'].shape, (1,))
 
     def test_gradient_scan_summary(self):
         # two "widths" through the label mechanism the scan scripts use, then the summarizer
