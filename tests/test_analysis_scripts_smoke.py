@@ -165,6 +165,21 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
         d = np.load(os.path.join(out, 'lorentz_closure.npz'))
         self.assertEqual(d['lorentz_coeffs'].shape, (2,))
 
+    def test_compare_force_scales(self):
+        out = os.path.join(self.tmp, 'forces')
+        path = os.path.join(self.tmp, 'f.pickle')
+        m = fake_model(self.stub)
+        rng = np.random.default_rng(8)
+        shape = m.meso_vars['u_tilde'].shape
+        m.meso_vars['F_closure'] = 1e-3 * rng.normal(size=shape)
+        m.meso_vars['p_tilde'] = 1.0 + rng.normal(size=shape[:4])
+        m.meso_structures['LorentzForceDensity'] = rng.normal(size=shape)
+        with open(path, 'wb') as fh:
+            pickle.dump(m, fh)
+        self.run_script('compare_force_scales.py', path, '--outdir', out)
+        d = np.load(os.path.join(out, 'force_scales.npz'))
+        self.assertEqual(d['div_T'].shape, d['F_closure'].shape)
+
     def test_gradient_scan_summary(self):
         # two "widths" through the label mechanism the scan scripts use, then the summarizer
         root = os.path.join(self.tmp, 'gscan')
