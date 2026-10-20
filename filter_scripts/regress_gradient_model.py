@@ -38,6 +38,9 @@ def main():
     p.add_argument("--min-points", type=int, default=100)
     p.add_argument("--n-null", type=int, default=50)
     p.add_argument("--label", default="", help="stored in the npz, e.g. the filter width of a scan")
+    p.add_argument("--sigma2-factor", type=float, default=1.0,
+                   help="multiply the nominal sigma^2 = W^2/12 by this (e.g. 1.12 at W=4 cells: linear interpolation of "
+                        "the micro data adds ~0.14 dx^2 of variance)")
     p.add_argument("--outdir", default=".")
     a = p.parse_args()
 
@@ -52,8 +55,8 @@ def main():
     vel = u[..., 1:] / u[..., 0:1]
     spacings = (float(dv['Dx']), float(dv['Dy']), float(dv['Dz']))
     dt = float(dv['Dt']) if Nt >= 3 else None
-    sigma2 = float(m.filter.filter_width) ** 2 / 12.0
-    print("meso grid %s, filter width %.4g (sigma^2 = %.3g), meso spacing %.4g" % (E.shape[:4], m.filter.filter_width, sigma2, spacings[0]))
+    sigma2 = a.sigma2_factor * float(m.filter.filter_width) ** 2 / 12.0
+    print("meso grid %s, filter width %.4g (sigma^2 = %.3g, factor %.3g), meso spacing %.4g" % (E.shape[:4], m.filter.filter_width, sigma2, a.sigma2_factor, spacings[0]))
     if dt is None:
         print("WARNING: only %d time slice(s): time derivatives set to zero, the model is INCOMPLETE" % Nt)
 
