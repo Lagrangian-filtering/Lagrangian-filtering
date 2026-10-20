@@ -180,6 +180,21 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
         d = np.load(os.path.join(out, 'force_scales.npz'))
         self.assertEqual(d['div_T'].shape, d['F_closure'].shape)
 
+    def test_map_closure_tail(self):
+        out = os.path.join(self.tmp, 'tail')
+        path = os.path.join(self.tmp, 't.pickle')
+        m = fake_model(self.stub)
+        rng = np.random.default_rng(9)
+        shape = m.meso_vars['u_tilde'].shape
+        m.meso_vars['F_closure'] = 1e-1 * rng.normal(size=shape)
+        m.meso_vars['p_tilde'] = 1.0 + np.abs(rng.normal(size=shape[:4]))
+        with open(path, 'wb') as fh:
+            pickle.dump(m, fh)
+        self.run_script('map_closure_tail.py', path, '--threshold', '0.05', '--outdir', out)
+        self.assertTrue(os.path.exists(os.path.join(out, 'closure_tail.png')))
+        d = np.load(os.path.join(out, 'closure_tail.npz'))
+        self.assertEqual(d['rank_corr'].shape, d['median_tail'].shape)
+
     def test_gradient_scan_summary(self):
         # two "widths" through the label mechanism the scan scripts use, then the summarizer
         root = os.path.join(self.tmp, 'gscan')
