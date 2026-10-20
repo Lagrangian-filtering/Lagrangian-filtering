@@ -470,5 +470,54 @@ class TestConditioning(unittest.TestCase):
         self.assertNotEqual(thr_masked, thr_all)
 
 
+class TestLorentzClosure(unittest.TestCase):
+    """F_closure = <f> + J~_a F~^{ab} against -C - sigma~ u~_a F~^{ab}, with analytic fields and a static observer."""
+
+    def _errors(self, W, n=36):
+        h = 1.0 / n
+        ax = (np.arange(n) + 0.5) * h
+        X = np.stack(np.meshgrid(ax, ax, ax, indexing='ij'), axis=-1)
+        k = 2 * np.pi
+        pts = np.array([0.0, np.sqrt(3.0 / 5.0), -np.sqrt(3.0 / 5.0)]) * W / 2.0
+        wts = np.array([4.0 / 9.0, 5.0 / 18.0, 5.0 / 18.0])
+
+        def fields(x):
+            s = [np.sin(k * x[..., i] + p) for i, p in enumerate((0.3, 1.1, 2.0))]
+            c = [np.cos(k * x[..., i] + p) for i, p in enumerate((0.3, 1.1, 2.0))]
+            j = np.stack([0.5 * s[0] * c[1], s[1] * c[2], c[0] * s[2], 0.7 * s[2] * s[1]], axis=-1)
+            E = 0.6 * np.stack([s[1] * c[2], s[2] * c[0], s[0] * c[1]], axis=-1)
+            B = np.stack([c[0] * s[1], c[1] * s[2], c[2] * s[0]], axis=-1)
+            F = np.zeros(x.shape[:-1] + (4, 4))
+            F[..., 0, 1:], F[..., 1:, 0] = E, -E
+            F[..., 1, 2], F[..., 2, 1] = B[..., 2], -B[..., 2]
+            F[..., 2, 3], F[..., 3, 2] = B[..., 0], -B[..., 0]
+            F[..., 3, 1], F[..., 1, 3] = B[..., 1], -B[..., 1]
+            f = -np.einsum('ac,...c,...ab->...b', MINK, j, F)
+            return j, F, f
+
+        acc = None
+        for a, wa in zip(pts, wts):
+            for b, wb in zip(pts, wts):
+                for c, wc in zip(pts, wts):
+                    out = fields(X + np.array([a, b, c]))
+                    acc = [wa * wb * wc * o for o in out] if acc is None else [x + wa * wb * wc * o for x, o in zip(acc, out)]
+        jt, Ft, ft = (a_[None] for a_ in acc)
+        u = np.zeros(jt.shape); u[..., 0] = 1.0
+        Jt = jt.copy(); Jt[..., 0] = 0.0                              # current orthogonal to the static observer
+        target = ft + np.einsum('ac,...c,...ab->...b', MINK, Jt, Ft)       # F_closure
+        m = OR.lorentz_force_model(jt, Ft, u, np.zeros(jt.shape[:-1] + (3,)), (h, h, h), W ** 2 / 12.0, MINK, dt=None)
+        sl = (slice(None),) + (slice(4, -4),) * 3
+        w = np.ones(4)
+        return {'full': 1.0 - OR.prediction_r2(target[sl], (m['cov'] + m['charge'])[sl], w),
+                'charge_only': 1.0 - OR.prediction_r2(target[sl], m['charge'][sl], w),
+                'amp': float(np.sqrt(np.sum(target[sl] ** 2)))}
+
+    def test_second_order_model_matches_filtered_force(self):
+        e1, e2 = self._errors(0.2), self._errors(0.1)
+        self.assertLess(e1['full'], 0.05)
+        self.assertGreater(e1['charge_only'], 5 * e1['full'])           # the covariance term is what carries the signal
+        self.assertLess(e2['full'], e1['full'] / 8.0 + 1e-6)             # residual falls ~ W^4
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -595,3 +595,36 @@ def set_weights(metric):
     """Weights for the flattened (16) tensor product pi_ab pi^ab with a diagonal metric: sign(g_aa g_bb)."""
     d = np.sign(np.diag(np.asarray(metric, dtype=float)))
     return np.outer(d, d).reshape(16)
+
+
+# ---------------------------------------------------------------------------------------
+# Sub-filter Lorentz force F_closure = <f^b> - f~^b
+# ---------------------------------------------------------------------------------------
+#
+# Micro f^b = -j_a F^{ab}. To second order, <f^b> = -j~_a F~^{ab} - C^b with
+# C^b = sigma^2 covariance_bracket(j, F)_a^{ab}. The pipeline defines F_closure = <f^b> + J~_a F~^{ab}, with
+# J~ the part of j~ orthogonal to u~; j~ = sigma~ u~ + J~ (sigma~ = -u~.j~), so exactly
+#
+#     F_closure^b = -C^b  -  sigma~ u~_a F~^{ab}.
+#
+# The second term is the force on the net charge, known from the filtered fields; the first is the prediction,
+# with no fitted constant (expected coefficient +1). It involves the meso-grid gradient of j~, itself a
+# derivative of F~, so it is the noisiest of the closure tests.
+
+def lorentz_force_model(j, F, u, v, spacings, sigma2, metric, dt=None):
+    """
+    j: filtered current <j^a> (Nt,Nx,Ny,Nz,4); F: filtered <F^{ab}> (...,4,4); u: meso observer u~ (...,4);
+    v = u~^i/u~^0 (...,3). Returns {'cov': -C^b (expected coefficient +1), 'charge': -sigma~ u~_a F~^{ab}
+    (exact, coefficient +1)}, each (...,4); F_closure = cov + charge up to higher order.
+    """
+    g = np.asarray(metric, dtype=float)
+    gamma = u[..., 0]
+
+    def lorentz_contraction(x, y):                       # g_{ac} x^c y^{ab}
+        return np.einsum('ac,...c,...ab->...b', g, x, y)
+
+    C = sigma2 * covariance_bracket(j, F, v, gamma, spacings, dt, lorentz_contraction)
+    sigma_t = -np.einsum('...a,ab,...b->...', u, g, j)
+    charge = -sigma_t[..., None] * np.einsum('ac,...c,...ab->...b', g, u, F)
+    return {'cov': -C, 'charge': charge}
+

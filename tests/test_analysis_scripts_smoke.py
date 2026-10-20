@@ -150,6 +150,21 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
         self.assertEqual(d['q_coeffs'].shape, (2,))
         self.assertEqual(d['pi_coeffs'].shape, (1,))
 
+    def test_regress_lorentz_closure(self):
+        out = os.path.join(self.tmp, 'lorentz')
+        path = os.path.join(self.tmp, 'l.pickle')
+        m = fake_model(self.stub)
+        rng = np.random.default_rng(7)
+        shape = m.meso_vars['u_tilde'].shape
+        m.meso_structures['ChargeCurrent'] = rng.normal(size=shape)
+        m.meso_vars['F_closure'] = 1e-3 * rng.normal(size=shape)
+        with open(path, 'wb') as fh:
+            pickle.dump(m, fh)
+        self.run_script('regress_lorentz_closure.py', path, '--block', '6', '6', '3',
+                        '--min-points', '20', '--n-null', '3', '--outdir', out)
+        d = np.load(os.path.join(out, 'lorentz_closure.npz'))
+        self.assertEqual(d['lorentz_coeffs'].shape, (2,))
+
     def test_gradient_scan_summary(self):
         # two "widths" through the label mechanism the scan scripts use, then the summarizer
         root = os.path.join(self.tmp, 'gscan')
