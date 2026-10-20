@@ -5,6 +5,8 @@ The scripts only need a few attributes of a pickled resMHD_3D, so MesoModels (he
 replaced by a stub class for the duration of the test. This checks that each script runs to completion
 and writes its outputs, not that the numbers are physically meaningful.
 """
+import contextlib
+import io
 import os
 import pickle
 import runpy
@@ -80,6 +82,21 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
     def run_script(self, script, *args):
         sys.argv = [script] + list(args)
         runpy.run_path(os.path.join(SCRIPTS, script), run_name='__main__')
+
+    def test_summarize_regions_can_name_alpha_as_winner(self):
+        root = os.path.join(self.tmp, 'regions')
+        os.makedirs(os.path.join(root, 'r1'))
+        subs = np.array(["R", "alpha", "gamma", "R+alpha", "R+gamma", "alpha+gamma", "R+alpha+gamma"])
+        np.savez(os.path.join(root, 'r1', 'ohms_regression.npz'), label='1,2,3', subsets=subs,
+                 global_R2=np.array([0.01, 0.30, 0.02, 0.31, 0.03, 0.31, 0.32]), shift_null_R2=np.full((7, 20), 0.01),
+                 global_coeffs=np.full((7, 3), 1e-6), R_only_tile_R_tilde=np.array([1e-6, 2e-6, 3e-6]),
+                 gamma_only_tile_gamma=np.array([1e-6, 2e-6]), region_stats=np.array([1.0, 1.0, 1.0]))
+        buf = io.StringIO()
+        sys.argv = ['summarize_regions.py', root]
+        with contextlib.redirect_stdout(buf):
+            runpy.run_path(os.path.join(SCRIPTS, 'summarize_regions.py'), run_name='__main__')
+        row = [l for l in buf.getvalue().splitlines() if l.startswith('1,2,3')][0]
+        self.assertIn(' alpha ', row)                       # alpha has by far the largest excess over its null
 
     def test_regress_ohms_law(self):
         out = os.path.join(self.tmp, 'reg')

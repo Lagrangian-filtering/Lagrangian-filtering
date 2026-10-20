@@ -126,7 +126,8 @@ def main():
         d = take(f)
         kw = {}
         if sym:
-            L = np.nanpercentile(np.abs(d), 98) or 1.0
+            fin = np.abs(d[np.isfinite(d)])               # inf as well as NaN must not reach the colour limits
+            L = (np.percentile(fin, 98) if fin.size else 0.0) or 1.0
             kw = dict(vmin=-L, vmax=L)
         im = ax[k].imshow(d, origin='lower', extent=ext, cmap=cm, interpolation='nearest', **kw)
         ax[k].set_title(title)

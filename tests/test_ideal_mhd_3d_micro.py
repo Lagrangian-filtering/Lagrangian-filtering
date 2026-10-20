@@ -199,6 +199,19 @@ class TestIdealMHD3DStructures(unittest.TestCase):
         np.testing.assert_allclose(
             j_at_point, [rho_expected, Jx_expected, Jy_expected, Jz_expected], atol=0.05)
 
+    def test_time_derivative_uses_actual_snapshot_times_not_nominal_dt(self):
+        """Snapshots two nominal steps apart (snapStride > 1, or a subset of files) must halve dF/dt, even though
+        domain_vars['dt'] is unchanged; the earlier code used arange(nt) * dt and ignored the stored times."""
+        def j_for(spacing):
+            m = make_multisnapshot_model(nt=3)
+            m.domain_vars['t'] = spacing * np.arange(3, dtype=float)
+            m.setup_structures()
+            return m.structures['ChargeCurrent']
+        j_static = j_for(1e12)                      # time derivative negligible: the purely spatial part
+        j1, j2 = j_for(1.0), j_for(2.0)
+        self.assertGreater(float(np.abs(j1 - j_static).max()), 1e-3)
+        np.testing.assert_allclose(j1 - j_static, 2.0 * (j2 - j_static), atol=1e-9)
+
     def test_charge_current_multisnapshot_nt_greater_than_1(self):
         """Regression test for nt>1 crash (Task 7): np.gradient axis tuple squeeze bug.
 

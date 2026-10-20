@@ -699,7 +699,11 @@ class IdealMHD_3D(object):
 
         # Compute temporal gradient if we have multiple time steps
         if nt > 1:
-            t = np.arange(nt) * self.domain_vars.get('dt', 1.0)
+            # Use the actual snapshot times (read from each file's Domain/endTime). Snapshots need not be one
+            # solver step apart (snapStride > 1, a subset of the files, uneven spacing), so the nominal
+            # domain_vars['dt'] is only a fallback for models that do not carry a time axis.
+            t_snap = np.asarray(self.domain_vars.get('t', []), dtype=float)
+            t = t_snap if t_snap.shape == (nt,) else np.arange(nt) * self.domain_vars.get('dt', 1.0)
             dFdt = np.gradient(F, t, axis=0)
         else:
             # Single time snapshot: time derivative is zero

@@ -218,6 +218,8 @@ def local_term_maps(E5, ops5, window, min_fraction=0.5):
         c_full = np.einsum('...ij,...j->...i', np.linalg.pinv(G), np.moveaxis(r, 0, -1))
         R2_full = np.sum(c_full * np.moveaxis(r, 0, -1), axis=-1) / EE
     R2 = np.where((gdiag > 0) & (EE > 0), R2, np.nan)
+    coeff = np.where(gdiag > 0, coeff, np.nan)           # same mask as R2: never inf/NaN-by-accident downstream
+    R2_full = np.where(EE > 0, R2_full, np.nan)
     count = box_sum(np.ones(EE.shape), window)
     valid = count >= min_fraction * np.prod(window)
     return {'R2': R2, 'coeff': coeff, 'R2_full': R2_full, 'valid': valid}

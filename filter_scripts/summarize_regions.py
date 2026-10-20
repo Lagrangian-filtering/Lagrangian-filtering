@@ -28,8 +28,11 @@ for f in files:
     iR, iG, iF = subs.index("R"), subs.index("gamma"), subs.index("R+alpha+gamma")
     R2, sh, c = d["global_R2"], d["shift_null_R2"], d["global_coeffs"]
     nR, nG = np.percentile(sh[iR], 95), np.percentile(sh[iG], 95)
-    exR, exG = R2[iR] - nR, R2[iG] - nG
-    win = "none" if max(exR, exG) <= 0 else ("R" if exR >= exG else "gamma")
+    iA = subs.index("alpha")
+    nA = np.percentile(sh[iA], 95)
+    excess = {"R": R2[iR] - nR, "alpha": R2[iA] - nA, "gamma": R2[iG] - nG}
+    best = max(excess, key=excess.get)
+    win = "none" if excess[best] <= 0 else best
     mR, loR, hiR, fR = spread(d["R_only_tile_R_tilde"])
     mG, loG, hiG, fG = spread(d["gamma_only_tile_gamma"] if "gamma_only_tile_gamma" in d.files else None)
     st = d["region_stats"] if "region_stats" in d.files else [np.nan] * 3

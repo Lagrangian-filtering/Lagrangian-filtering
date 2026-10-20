@@ -103,7 +103,10 @@ def main():
     ncols = 4 + len(extra)
     fig, axes = plt.subplots(2, ncols, figsize=(4.9 * ncols, 8), constrained_layout=True)
     cR, cG = maps['coeff'][0], maps['coeff'][2]
-    lim = lambda f: np.nanpercentile(np.abs(f[maps['valid']]), 98) or 1.0
+    def lim(f):
+        v = np.abs(f[maps['valid']])
+        v = v[np.isfinite(v)]                            # inf as well as NaN must not reach the colour limits
+        return (np.percentile(v, 98) if v.size else 0.0) or 1.0
     for row, (plane, (a1, a2), take, where) in enumerate(planes):
         ext = extent(a1, a2)
         axes[row, 0].imshow(take(win).T, origin='lower', extent=ext, cmap=cmap, norm=norm, aspect='equal', interpolation='nearest')

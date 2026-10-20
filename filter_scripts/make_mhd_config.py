@@ -11,10 +11,12 @@ cluster, in the filtering conda environment, once the simulation has finished:
 
 Then:  sbatch submit_<name>.sh
 
-Why the check: the filter samples +-W/2 along the observer's time direction (and the
-observer search uses a box of side L), so it reaches up to ~ f * sqrt(3/5) * max(L, W)/2 in time, where
-f = gamma (1 + sqrt(3) v) for the fastest flow speed v. Samples outside the snapshot
-window crash interpn. The meso time slices (num_T_slices) also have to fit inside the window.
+Why the check: the filter averages over a 3D box in the observer's rest space (27 Gauss
+points on the three spatial legs of the tetrad orthogonal to u; the time-like leg is not averaged), and the
+observer search uses a box of side L. The boosted legs have time components, so the samples still reach in
+lab time by up to ~ f * sqrt(3/5) * max(L, W)/2, with f = gamma (1 + sqrt(3) v) for the fastest flow speed v.
+(The '1' stands for a time-like leg that does not exist, so f is a conservative over-estimate; the sharper
+bound is gamma * sqrt(3) * v.) Samples outside the snapshot window crash interpn. The meso time slices (num_T_slices) also have to fit inside the window.
 All widths below are in units of the micro grid spacing dx.
 """
 import argparse

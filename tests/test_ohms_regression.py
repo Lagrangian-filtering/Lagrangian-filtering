@@ -307,6 +307,16 @@ class TestOhmsRegression(unittest.TestCase):
         for k in ('tt', 'ts', 'vv'):
             np.testing.assert_allclose(with_time[k], 0.0, atol=1e-12)
         self.assertGreater(float(np.abs(with_time['ss']).max()), 1e-3)
+    def test_local_coefficients_are_masked_like_r2_where_the_operator_is_not_spacelike(self):
+        E, ops = synthetic(shape=(1, 10, 10, 6))
+        timelike = ops['R_tilde'].copy()
+        timelike[..., 0] = 100.0                      # |O|^2 = -1e4 + ... < 0: not a spacelike operator
+        ops = dict(ops, R_tilde=timelike)
+        maps = OR.local_term_maps(E, ops, (3, 3, 3))
+        self.assertTrue(np.all(np.isnan(maps['R2'][0])))
+        self.assertTrue(np.all(np.isnan(maps['coeff'][0])))         # was finite garbage before the mask
+        self.assertTrue(np.all(np.isfinite(maps['coeff'][1])))      # the other operators are untouched
+
 
 if __name__ == '__main__':
     unittest.main()
