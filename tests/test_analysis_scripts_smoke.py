@@ -195,6 +195,21 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
         d = np.load(os.path.join(out, 'closure_tail.npz'))
         self.assertEqual(d['rank_corr'].shape, d['median_tail'].shape)
 
+    def test_check_backscatter(self):
+        out = os.path.join(self.tmp, 'back')
+        path = os.path.join(self.tmp, 'b.pickle')
+        m = fake_model(self.stub)
+        rng = np.random.default_rng(10)
+        shape = m.meso_vars['u_tilde'].shape
+        m.meso_vars['F_closure'] = 1e-1 * rng.normal(size=shape)
+        m.meso_structures['ChargeCurrent'] = rng.normal(size=shape)
+        m.meso_structures['BC'] = m.meso_vars['n_tilde'][..., None] * m.meso_vars['u_tilde']
+        with open(path, 'wb') as fh:
+            pickle.dump(m, fh)
+        self.run_script('check_backscatter.py', path, '--threshold', '0.05', '--outdir', out)
+        d = np.load(os.path.join(out, 'backscatter.npz'))
+        self.assertEqual(d['values'].shape[1], 4)
+
     def test_gradient_scan_summary(self):
         # two "widths" through the label mechanism the scan scripts use, then the summarizer
         root = os.path.join(self.tmp, 'gscan')

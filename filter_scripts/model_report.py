@@ -33,3 +33,24 @@ def report(name, target, ops, weights, expected, block, min_points, n_null, rows
                       fit_null95=float(np.percentile(fnull, 95)),
                       coeffs=np.array([fit[n] for n in names]), tile_coeffs=np.array([[t[n] for n in names] for t in tiles]))
     print()
+
+
+def central_slice(shape4):
+    """(time, x, y, z) slices of the central time slice with one edge cell dropped on each spatial axis (as the model scripts)."""
+    Nt = shape4[0]
+    t_sl = slice(Nt // 2, Nt // 2 + 1) if Nt >= 3 else slice(None)
+    return (t_sl,) + tuple(slice(1, -1) if n >= 3 else slice(None) for n in shape4[1:4])
+
+
+def total_force_ratio(m):
+    """|F_closure| / |d_a <T^{ai}>| (spatial components, centred differences on the meso grid) at every meso point."""
+    st, dv, mv = m.meso_structures, m.domain_vars, m.meso_vars
+    T = np.asarray(st['SET'], dtype=float)
+    spacings = (float(dv['Dx']), float(dv['Dy']), float(dv['Dz']))
+    div = np.zeros(T.shape[:4] + (3,))
+    if T.shape[0] >= 3:
+        div += np.gradient(T[..., 0, 1:], float(dv['Dt']), axis=0)
+    for l in range(3):
+        div += np.gradient(T[..., l + 1, 1:], spacings[l], axis=l + 1)
+    Fc = np.sqrt(np.sum(np.asarray(mv['F_closure'], dtype=float)[..., 1:] ** 2, axis=-1))
+    return Fc / np.maximum(np.sqrt(np.sum(div ** 2, axis=-1)), 1e-300)
