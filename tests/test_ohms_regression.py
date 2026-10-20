@@ -441,5 +441,34 @@ class TestStressTensor(unittest.TestCase):
         self.assertLess(e2['q'], e1['q'] / 8.0 + 1e-6)
 
 
+class TestConditioning(unittest.TestCase):
+    def test_operators_of_very_different_size(self):
+        rng = np.random.default_rng(2)
+        big, tiny = rng.normal(size=(3, 6, 6, 4, 4)), 1e-9 * rng.normal(size=(3, 6, 6, 4, 4))
+        E = 2.0 * big + 3e7 * tiny
+        fit = OR.fit_region(E, {'alpha_dynamo': big, 'R_tilde': tiny}, ('alpha_dynamo', 'R_tilde'))
+        self.assertAlmostEqual(fit['alpha_dynamo'], 2.0, places=6)
+        self.assertAlmostEqual(fit['R_tilde'] / 3e7, 1.0, places=6)
+        self.assertGreater(fit['R2'], 1 - 1e-10)
+
+    def test_zero_operator_gets_zero_coefficient(self):
+        rng = np.random.default_rng(3)
+        a = rng.normal(size=(2, 4, 4, 4, 4))
+        fit = OR.fit_region(a, {'alpha_dynamo': a, 'R_tilde': np.zeros_like(a)}, ('alpha_dynamo', 'R_tilde'))
+        self.assertAlmostEqual(fit['alpha_dynamo'], 1.0)
+        self.assertEqual(fit['R_tilde'], 0.0)
+
+    def test_null_threshold_valid_mask_ignores_holes(self):
+        rng = np.random.default_rng(4)
+        sh = (1, 12, 12, 6, 4)
+        ops = {t: rng.normal(size=sh) for t in OR.TERMS}
+        E = rng.normal(size=sh)
+        valid = np.zeros(sh[1:4], dtype=bool); valid[3:9, 3:9, 1:5] = True
+        thr_masked = OR.local_null_threshold(E, ops, (3, 3, 3), n_null=4, valid=valid)
+        thr_all = OR.local_null_threshold(E, ops, (3, 3, 3), n_null=4)
+        self.assertTrue(np.isfinite(thr_masked) and np.isfinite(thr_all))
+        self.assertNotEqual(thr_masked, thr_all)
+
+
 if __name__ == '__main__':
     unittest.main()

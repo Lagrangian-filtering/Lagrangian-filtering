@@ -1,4 +1,5 @@
 #!/bin/bash
+# The data directory defaults to the 576x576x288 run; set KHI_DATA=/path/to/run (no trailing slash) to use another.
 # Generate a config for each filter width W (in micro cells) on a common region and submit it.
 # Run in the lagfilt environment, from filter_scripts.
 # Usage: [REGION=i,j,k] [NSLICES=n] [COARSE=c] ./scan_w_submit.sh [W ...]
@@ -9,7 +10,7 @@
 # so NSLICES=1 COARSE=4 reproduces the original names, and NSLICES=3 COARSE=2 gives khi576_w4_3sl_c2.
 # L (observer box) = min(1.5 W, 12). Widths the window cannot support are skipped, not forced.
 set -u
-DATA=/scratch/ih3/METHOD_simulations/khi_window_576x576x288_8x8x3_seed1/
+DATA="${KHI_DATA:-/scratch/ih3/METHOD_simulations/khi_window_576x576x288_8x8x3_seed1}/"
 CROP="96 96 48"     # common crop
 PAD=12              # common margin so every W uses the same meso grid
 cd "$(dirname "$0")"

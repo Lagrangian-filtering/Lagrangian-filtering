@@ -24,18 +24,15 @@ import time
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'master_files'))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.colors import BoundaryNorm, ListedColormap
-from matplotlib.patches import Patch
 
 import OhmsRegression as OR
 from MesoModels import *            # noqa: F401  (needed so the pickled classes can be loaded)
 from system.BaseFunctionality import Base
-
-LABELS = ['none', 'R (resistive)', 'alpha (dynamo)', 'gamma (Hall)']
-COLOURS = ['#d9d9d9', '#d62728', '#2ca02c', '#1f77b4']
+from winner_plots import LABELS, COLOURS, winner_cmap_norm, winner_legend, sym_limit
 
 
 def main():
@@ -87,9 +84,11 @@ def main():
         present.shape, len(files), 100.0 * present.mean()))
 
     maps = OR.local_term_maps(F['E'], ops, window)
-    thr = a.min_r2 if a.min_r2 is not None else OR.local_null_threshold(F['E'], ops, window, n_null=a.n_null)
+    thr = a.min_r2
     covered = OR.box_sum(present.astype(float), window) >= 0.5 * np.prod(window)
     valid = maps['valid'] & covered
+    if thr is None:                                   # chance level over the covered windows only (holes are zero-filled)
+        thr = OR.local_null_threshold(F['E'], ops, window, n_null=a.n_null, valid=valid)
     win = np.where(valid, OR.winner_map(maps['R2'], thr), -2)
     best = np.nanmax(np.where(np.isnan(maps['R2']), -np.inf, maps['R2']), axis=0)
     best = np.where(valid & np.isfinite(best), best, np.nan)
@@ -108,13 +107,12 @@ def main():
     dX, dY = spacing[0], spacing[1]
     ext = [X[0] - dX / 2, X[-1] + dX / 2, Y[0] - dY / 2, Y[-1] + dY / 2]
     take = lambda f: f[:, :, iz].T
-    cmap = ListedColormap(['white'] + COLOURS)
-    norm = BoundaryNorm(np.arange(-2.5, 3.5, 1.0), cmap.N)
+    cmap, norm = winner_cmap_norm()
     fig, axes = plt.subplots(2, 4, figsize=(32, 16), constrained_layout=True)
     ax = axes.ravel()
     ax[0].imshow(take(win), origin='lower', extent=ext, cmap=cmap, norm=norm, interpolation='nearest')
     ax[0].set_title("winner, xy-plane at z = %.3f" % Z[iz])
-    ax[0].legend(handles=[Patch(color=c, label=l) for c, l in zip(COLOURS, LABELS)], loc='upper right', fontsize=8)
+    winner_legend(ax[0])
     panels = [(best, "best local R2 (chance %.2f)" % thr, "viridis", False),
               (np.where(valid, maps['coeff'][0], np.nan), "local R_tilde (single-term)", "RdBu_r", True),
               (np.where(valid, maps['coeff'][2], np.nan), "local gamma (single-term)", "RdBu_r", True),
@@ -126,8 +124,7 @@ def main():
         d = take(f)
         kw = {}
         if sym:
-            fin = np.abs(d[np.isfinite(d)])               # inf as well as NaN must not reach the colour limits
-            L = (np.percentile(fin, 98) if fin.size else 0.0) or 1.0
+            L = sym_limit(d)
             kw = dict(vmin=-L, vmax=L)
         im = ax[k].imshow(d, origin='lower', extent=ext, cmap=cm, interpolation='nearest', **kw)
         ax[k].set_title(title)

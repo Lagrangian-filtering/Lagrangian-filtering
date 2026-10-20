@@ -1,9 +1,10 @@
 #!/bin/bash
+# The data directory defaults to the 576x576x288 run; set KHI_DATA=/path/to/run (no trailing slash) to use another.
 # Generate and submit one filtering job per crop region at fixed filter width.
 # Run in the lagfilt environment, from filter_scripts. Usage: ./scan_regions_submit.sh [i,j,k ...]
 # Each argument is the first cell of a 96x96x48 crop, e.g. 40,100,120. Default: 8 spread-out regions.
 set -u
-DATA=/scratch/ih3/METHOD_simulations/khi_window_576x576x288_8x8x3_seed1/
+DATA="${KHI_DATA:-/scratch/ih3/METHOD_simulations/khi_window_576x576x288_8x8x3_seed1}/"
 W=4; L=6; CROP="96 96 48"; PAD=12
 cd "$(dirname "$0")"
 Rs=("$@")

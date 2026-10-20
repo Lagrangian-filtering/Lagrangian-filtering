@@ -25,18 +25,15 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'master_files'))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.colors import BoundaryNorm, ListedColormap
-from matplotlib.patches import Patch
 
 import OhmsRegression as OR
 from MesoModels import *            # noqa: F401  (needed so the pickled classes can be loaded)
 from system.BaseFunctionality import Base
-
-LABELS = ['none', 'R (resistive)', 'alpha (dynamo)', 'gamma (Hall)']
-COLOURS = ['#d9d9d9', '#d62728', '#2ca02c', '#1f77b4']
+from winner_plots import LABELS, COLOURS, winner_cmap_norm, winner_legend, sym_limit
 
 
 def main():
@@ -95,18 +92,13 @@ def main():
         d2 = (ax2[1] - ax2[0]) if len(ax2) > 1 else 1.0
         return [ax1[0] - d1 / 2, ax1[-1] + d1 / 2, ax2[0] - d2 / 2, ax2[-1] + d2 / 2]
 
-    cmap = ListedColormap(['white'] + COLOURS)       # -2 white, -1 grey, 0 red, 1 green, 2 blue
-    norm = BoundaryNorm(np.arange(-2.5, 3.5, 1.0), cmap.N)
+    cmap, norm = winner_cmap_norm()                  # -2 white, -1 grey, 0 red, 1 green, 2 blue
     extra = [(n_mean, "filtered density n_tilde", "viridis"), (B2_mean, "|B_tilde|^2", "magma")]
     if B2sub_mean is not None:
         extra.append((B2sub_mean, "sub-filter B^2 = <B^2> - |<B>|^2", "magma"))
     ncols = 4 + len(extra)
     fig, axes = plt.subplots(2, ncols, figsize=(4.9 * ncols, 8), constrained_layout=True)
     cR, cG = maps['coeff'][0], maps['coeff'][2]
-    def lim(f):
-        v = np.abs(f[maps['valid']])
-        v = v[np.isfinite(v)]                            # inf as well as NaN must not reach the colour limits
-        return (np.percentile(v, 98) if v.size else 0.0) or 1.0
     for row, (plane, (a1, a2), take, where) in enumerate(planes):
         ext = extent(a1, a2)
         axes[row, 0].imshow(take(win).T, origin='lower', extent=ext, cmap=cmap, norm=norm, aspect='equal', interpolation='nearest')
@@ -116,7 +108,7 @@ def main():
         fig.colorbar(im, ax=axes[row, 1], shrink=0.8)
         for col, (f, name) in enumerate(((cR, "local R_tilde"), (cG, "local gamma")), start=2):
             fm = np.where(maps['valid'], f, np.nan)
-            L = lim(f)
+            L = sym_limit(f[maps['valid']])
             im = axes[row, col].imshow(take(fm).T, origin='lower', extent=ext, cmap='RdBu_r', vmin=-L, vmax=L,
                                        aspect='equal', interpolation='nearest')
             axes[row, col].set_title("%s (single-term fit)" % name)
@@ -127,7 +119,7 @@ def main():
             fig.colorbar(im, ax=axes[row, col], shrink=0.8)
         for col in range(ncols):
             axes[row, col].set_xlabel(plane[0]); axes[row, col].set_ylabel(plane[1])
-    axes[0, 0].legend(handles=[Patch(color=c, label=l) for c, l in zip(COLOURS, LABELS)], loc='upper right', fontsize=8)
+    winner_legend(axes[0, 0])
     fig.suptitle("%s   window %s meso cells   chance threshold %.3f" % (os.path.basename(a.pickle_file), window, thr))
     fig.savefig(os.path.join(a.outdir, "ohms_winner.png"), dpi=a.dpi)
     plt.close(fig)

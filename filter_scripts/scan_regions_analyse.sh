@@ -1,8 +1,9 @@
 #!/bin/bash
+# The data directory defaults to the 576x576x288 run; set KHI_DATA=/path/to/run (no trailing slash) to use another.
 # Regress each region's pickle, then tabulate. Run once the jobs have finished.
 # Usage: ./scan_regions_analyse.sh [i,j,k ...]   (same defaults as scan_regions_submit.sh)
 set -u
-PICK=/scratch/ih3/METHOD_simulations/khi_window_576x576x288_8x8x3_seed1/pickled
+PICK="${KHI_DATA:-/scratch/ih3/METHOD_simulations/khi_window_576x576x288_8x8x3_seed1}/pickled"
 cd "$(dirname "$0")"
 Rs=("$@")
 [ ${#Rs[@]} -eq 0 ] && Rs=(40,100,120 240,100,120 440,100,120 40,380,120 240,380,120 440,380,120 240,240,48 240,240,192)

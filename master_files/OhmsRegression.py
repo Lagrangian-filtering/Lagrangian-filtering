@@ -50,6 +50,29 @@ def _wdot(a, b, weights=None):
     return np.sum(np.asarray(weights) * a * b, axis=-1)
 
 
+def _solve_normal(G, r, EE):
+    """
+    Least squares from the Gram matrix G = O_k.O_l and r = O_k.E. Columns are scaled to unit norm
+    first, so operators of very different size (J~ is ~1e-6 B~ here) do not make the system badly
+    conditioned; lstsq still handles linearly dependent or all-zero operators. Returns (c, rss).
+    """
+    d = np.sqrt(np.clip(np.diag(G), 0.0, None))
+    d = np.where(d > 0, d, 1.0)
+    c, *_ = np.linalg.lstsq(G / np.outer(d, d), r / d, rcond=None)
+    c = c / d
+    return c, max(float(EE - 2.0 * c @ r + c @ G @ c), 0.0)
+
+
+def _fit_result(names, c, rss, EE, n):
+    coeffs = {t: np.nan for t in TERMS}
+    for t, v in zip(names, c):
+        coeffs[t] = float(v)
+    out = dict(coeffs)
+    out.update({'n': n, 'rss': rss, 'EE': EE, 'names': tuple(names),
+                'R2': (1.0 - rss / EE) if EE > 0 else np.nan})
+    return out
+
+
 def fit_region(E, ops, names, weights=None):
     """
     Least-squares fit of one set of constant coefficients to all points given.
@@ -69,23 +92,13 @@ def fit_region(E, ops, names, weights=None):
     E = E.reshape(-1, k)
     names = tuple(names)
     EE = float(_wdot(E, E, weights).sum())
-    coeffs = {t: np.nan for t in TERMS}
-    if names:
-        O = [np.asarray(ops[t], dtype=float).reshape(-1, k) for t in names]
-        G = np.array([[_wdot(a, b, weights).sum() for b in O] for a in O])
-        r = np.array([_wdot(a, E, weights).sum() for a in O])
-        # lstsq: G is singular when operators are linearly dependent over the region
-        c, *_ = np.linalg.lstsq(G, r, rcond=None)
-        rss = EE - 2.0 * c @ r + c @ G @ c
-        for t, v in zip(names, c):
-            coeffs[t] = float(v)
-    else:
-        rss = EE
-    rss = max(float(rss), 0.0)
-    out = dict(coeffs)
-    out.update({'n': len(E), 'rss': rss, 'EE': EE, 'names': names,
-                'R2': (1.0 - rss / EE) if EE > 0 else np.nan})
-    return out
+    if not names:
+        return _fit_result(names, [], EE, EE, len(E))
+    O = [np.asarray(ops[t], dtype=float).reshape(-1, k) for t in names]
+    G = np.array([[_wdot(a, b, weights).sum() for b in O] for a in O])
+    r = np.array([_wdot(a, E, weights).sum() for a in O])
+    c, rss = _solve_normal(G, r, EE)
+    return _fit_result(names, c, rss, EE, len(E))
 
 
 def all_subsets():
@@ -130,6 +143,19 @@ def tile_fits(E5, ops5, names, block, min_points=1, weights=None):
     return fits
 
 
+def _shift_setup(lengths, min_shift):
+    """Which spatial axes are long enough to shift by at least min_shift cells (raises if none are)."""
+    shiftable = [n >= 2 * min_shift + 1 for n in lengths]
+    if not any(shiftable):
+        raise ValueError("grid %s too small to shift by at least %d cells" % (tuple(lengths), min_shift))
+    return shiftable
+
+
+def _draw_shifts(rng, lengths, shiftable, min_shift):
+    """One random circular shift per spatial axis (0 on axes that are too short)."""
+    return [int(rng.integers(min_shift, n - min_shift + 1)) if ok else 0 for n, ok in zip(lengths, shiftable)]
+
+
 def permutation_null(E, ops, names, n_perm=50, seed=0):
     """
     R2 of the same fit when E is paired with operators from randomly chosen other points.
@@ -158,15 +184,21 @@ def shift_null(E5, ops5, names, n_perm=100, min_shift=3, seed=0, weights=None):
     rng = np.random.default_rng(seed)
     E5 = np.asarray(E5, dtype=float)
     lengths = E5.shape[1:4]
-    shiftable = [n >= 2 * min_shift + 1 for n in lengths]
-    if not any(shiftable):
-        raise ValueError("grid %s too small to shift by at least %d cells" % (lengths, min_shift))
+    shiftable = _shift_setup(lengths, min_shift)
+    names = tuple(names)
+    k = E5.shape[-1]
+    if not names:
+        return np.array([fit_region(E5, ops5, names, weights)['R2'] for _ in range(n_perm)])
+    # The operators and the total |E|^2 do not change under a shift, so the Gram matrix is built once
+    O = [np.asarray(ops5[t], dtype=float).reshape(-1, k) for t in names]
+    G = np.array([[_wdot(a, b, weights).sum() for b in O] for a in O])
+    EE = float(_wdot(E5.reshape(-1, k), E5.reshape(-1, k), weights).sum())
     out = []
     for _ in range(n_perm):
-        shifts = [int(rng.integers(min_shift, n - min_shift + 1)) if ok else 0
-                  for n, ok in zip(lengths, shiftable)]
-        Es = np.roll(E5, shift=shifts, axis=(1, 2, 3))
-        out.append(fit_region(Es, ops5, names, weights)['R2'])
+        Es = np.roll(E5, shift=_draw_shifts(rng, lengths, shiftable, min_shift), axis=(1, 2, 3)).reshape(-1, k)
+        r = np.array([_wdot(a, Es, weights).sum() for a in O])
+        _, rss = _solve_normal(G, r, EE)
+        out.append((1.0 - rss / EE) if EE > 0 else np.nan)
     return np.array(out)
 
 
@@ -200,6 +232,22 @@ def box_sum(a, window):
     return out
 
 
+def _local_operator_sums(ops5, window):
+    """Windowed Gram matrix of the three operators, G (Nx,Ny,Nz,3,3), and its diagonal gdiag (3,Nx,Ny,Nz)."""
+    O = [np.asarray(ops5[t], dtype=float) for t in TERMS]
+    G = np.empty(O[0].shape[1:4] + (3, 3))
+    for i in range(3):
+        for j in range(i, 3):
+            G[..., i, j] = G[..., j, i] = box_sum(mink_dot(O[i], O[j]).sum(axis=0), window)
+    return O, G, np.stack([G[..., k, k] for k in range(3)])
+
+
+def _local_E_sums(E5, O, window):
+    """Windowed |E|^2 (Nx,Ny,Nz) and the windowed O_k.E, r (3,Nx,Ny,Nz)."""
+    EE = box_sum(mink_dot(E5, E5).sum(axis=0), window)
+    return EE, np.stack([box_sum(mink_dot(o, E5).sum(axis=0), window) for o in O])
+
+
 def local_term_maps(E5, ops5, window, min_fraction=0.5):
     """
     Constant-coefficient fits in a sliding spatial window around every meso point (all time
@@ -210,20 +258,9 @@ def local_term_maps(E5, ops5, window, min_fraction=0.5):
     TERMS, 'coeff' (3, ...) the single-term coefficients, 'R2_full' for all three terms,
     and 'valid' (windows with at least min_fraction of their full volume inside the grid).
     """
-    names = TERMS
     E5 = np.asarray(E5, dtype=float)
-    O = [np.asarray(ops5[t], dtype=float) for t in names]
-
-    def tsum(x):
-        return box_sum(x.sum(axis=0), window)
-
-    EE = tsum(mink_dot(E5, E5))
-    r = np.stack([tsum(mink_dot(o, E5)) for o in O])
-    G = np.empty(EE.shape + (3, 3))
-    for i in range(3):
-        for j in range(i, 3):
-            G[..., i, j] = G[..., j, i] = tsum(mink_dot(O[i], O[j]))
-    gdiag = np.stack([G[..., k, k] for k in range(3)])
+    O, G, gdiag = _local_operator_sums(ops5, window)
+    EE, r = _local_E_sums(E5, O, window)
     with np.errstate(divide='ignore', invalid='ignore'):
         R2 = r ** 2 / (gdiag * EE)
         coeff = r / gdiag
@@ -245,26 +282,31 @@ def winner_map(R2, threshold):
     return np.where(np.isfinite(top) & (top >= threshold), best, -1)
 
 
-def local_null_threshold(E5, ops5, window, n_null=20, min_shift=None, q=95.0, seed=0):
+def local_null_threshold(E5, ops5, window, n_null=20, min_shift=None, q=95.0, seed=0, valid=None):
     """
     Chance level for the best single-term local R2: the q-th percentile, over valid points,
     of the best single-term R2 when E is circularly shifted (as in shift_null) so that its
     alignment with the operators is broken but its spatial structure is kept.
+
+    valid: optional boolean (Nx, Ny, Nz) mask of the points that count (default: windows mostly inside
+    the grid, as local_term_maps; a mosaic passes the points that are covered by a crop).
     """
     rng = np.random.default_rng(seed)
     E5 = np.asarray(E5, dtype=float)
     min_shift = int(max(window)) if min_shift is None else min_shift
     lengths = E5.shape[1:4]
-    shiftable = [n >= 2 * min_shift + 1 for n in lengths]
-    if not any(shiftable):
-        raise ValueError("grid %s too small to shift by at least %d cells" % (lengths, min_shift))
+    shiftable = _shift_setup(lengths, min_shift)
+    O, _, gdiag = _local_operator_sums(ops5, window)        # shift-invariant: built once
+    if valid is None:
+        valid = box_sum(np.ones(lengths), window) >= 0.5 * np.prod(window)
     best = []
     for _ in range(n_null):
-        shifts = [int(rng.integers(min_shift, n - min_shift + 1)) if ok else 0
-                  for n, ok in zip(lengths, shiftable)]
-        m = local_term_maps(np.roll(E5, shift=shifts, axis=(1, 2, 3)), ops5, window)
-        top = np.nanmax(np.where(np.isnan(m['R2']), -np.inf, m['R2']), axis=0)
-        best.append(top[m['valid'] & np.isfinite(top)])
+        Es = np.roll(E5, shift=_draw_shifts(rng, lengths, shiftable, min_shift), axis=(1, 2, 3))
+        EE, r = _local_E_sums(Es, O, window)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            R2 = np.where((gdiag > 0) & (EE > 0), r ** 2 / (gdiag * EE), np.nan)
+        top = np.nanmax(np.where(np.isnan(R2), -np.inf, R2), axis=0)
+        best.append(top[valid & np.isfinite(top)])
     return float(np.percentile(np.concatenate(best), q))
 
 
@@ -468,14 +510,9 @@ def prediction_shift_null(E5, pred5, n_perm=50, min_shift=3, seed=0, weights=Non
     rng = np.random.default_rng(seed)
     E5 = np.asarray(E5, dtype=float)
     lengths = E5.shape[1:4]
-    shiftable = [n >= 2 * min_shift + 1 for n in lengths]
-    if not any(shiftable):
-        raise ValueError("grid %s too small to shift by at least %d cells" % (lengths, min_shift))
-    out = []
-    for _ in range(n_perm):
-        shifts = [int(rng.integers(min_shift, n - min_shift + 1)) if ok else 0 for n, ok in zip(lengths, shiftable)]
-        out.append(prediction_r2(np.roll(E5, shift=shifts, axis=(1, 2, 3)), pred5, weights))
-    return np.array(out)
+    shiftable = _shift_setup(lengths, min_shift)
+    return np.array([prediction_r2(np.roll(E5, shift=_draw_shifts(rng, lengths, shiftable, min_shift), axis=(1, 2, 3)),
+                                   pred5, weights) for _ in range(n_perm)])
 
 
 # ---------------------------------------------------------------------------------------

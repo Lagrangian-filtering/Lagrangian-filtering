@@ -2746,7 +2746,7 @@ class resMHD_3D(resHD_3D):
 
     @staticmethod
     def ohms_law_fit_gridpoint(E_tilde, J_tilde, B_tilde, u_tilde, metric,
-                                use_resistive=True, use_dynamo=True, use_hall=True):
+                                use_resistive=True, use_dynamo=True, use_hall=True, levi_upper=None):
         """
         Fits the generic Ohm's law closure at a single meso gridpoint:
 
@@ -2758,6 +2758,9 @@ class resMHD_3D(resHD_3D):
         its contribution stays folded into Ohm_res rather than being
         silently absorbed by the remaining terms.
 
+        levi_upper: optional precomputed Base.raise_LeviCivita4D(metric) (fit_ohms_law_closure builds it once
+        for the whole grid instead of once per point).
+
         Returns
         -------
         (R_tilde, alpha_dynamo, gamma_hall, Ohm_res): float, float, float, ndarray(4,)
@@ -2768,7 +2771,8 @@ class resMHD_3D(resHD_3D):
         if use_dynamo:
             names.append('alpha_dynamo'); operators.append(B_tilde)
         if use_hall:
-            hall = OhmsRegression.hall_operator(J_tilde, u_tilde, B_tilde, Base.raise_LeviCivita4D(metric), metric)
+            hall = OhmsRegression.hall_operator(
+                J_tilde, u_tilde, B_tilde, Base.raise_LeviCivita4D(metric) if levi_upper is None else levi_upper, metric)
             names.append('gamma_hall'); operators.append(hall)
 
         coeffs = {'R_tilde': np.nan, 'alpha_dynamo': np.nan, 'gamma_hall': np.nan}
@@ -2810,7 +2814,14 @@ class resMHD_3D(resHD_3D):
         per-point linear system is at most 3x3, and meso grids are
         coarse-grained (orders of magnitude fewer points than the micro
         grid), so a plain loop is fast enough here.
+
+        NOTE: with all three terms enabled this is an exact decomposition, not a test of the closure. At a single
+        point J~, B~ and the Hall vector span the three directions orthogonal to u~ (for generic fields) while
+        E~.u~ = 0, so the residual is zero up to rounding whatever the physics. The fitted coefficients vary from
+        point to point and carry no information on their own; the informative fit is the constant-coefficient
+        regression over regions and tiles (OhmsRegression.py, filter_scripts/regress_ohms_law.py).
         """
+        levi_upper = Base.raise_LeviCivita4D(self.metric)
         Nt, Nx, Ny, Nz = self.domain_vars['Nt'], self.domain_vars['Nx'], self.domain_vars['Ny'], self.domain_vars['Nz']
         for h in range(Nt):
             for i in range(Nx):
@@ -2822,7 +2833,8 @@ class resMHD_3D(resHD_3D):
                             self.meso_vars['B_tilde'][h, i, j, k],
                             self.meso_vars['u_tilde'][h, i, j, k],
                             self.metric,
-                            use_resistive=use_resistive, use_dynamo=use_dynamo, use_hall=use_hall)
+                            use_resistive=use_resistive, use_dynamo=use_dynamo, use_hall=use_hall,
+                            levi_upper=levi_upper)
                         self.meso_vars['R_tilde'][h, i, j, k] = R
                         self.meso_vars['alpha_dynamo'][h, i, j, k] = alpha
                         self.meso_vars['gamma_hall'][h, i, j, k] = gamma

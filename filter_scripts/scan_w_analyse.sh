@@ -1,4 +1,5 @@
 #!/bin/bash
+# The data directory defaults to the 576x576x288 run; set KHI_DATA=/path/to/run (no trailing slash) to use another.
 # Analyse the pickles from scan_w_submit.sh, then tabulate against W.
 # Run in the lagfilt environment, from filter_scripts, once the jobs have finished.
 # Usage: [REGION=i,j,k] [NSLICES=n] [COARSE=c] [MODE=ohms|gradient] ./scan_w_analyse.sh [W ...]
@@ -6,7 +7,7 @@
 #   MODE=ohms (default): regional regression of the resistive/dynamo/Hall terms -> scan_results[...]/
 #   MODE=gradient: the second-order (gradient) model of E_tilde (needs NSLICES=3) -> gradient_scan[...]/
 set -u
-PICK=/scratch/ih3/METHOD_simulations/khi_window_576x576x288_8x8x3_seed1/pickled
+PICK="${KHI_DATA:-/scratch/ih3/METHOD_simulations/khi_window_576x576x288_8x8x3_seed1}/pickled"
 cd "$(dirname "$0")"
 REGION=${REGION:-}
 NSLICES=${NSLICES:-1}

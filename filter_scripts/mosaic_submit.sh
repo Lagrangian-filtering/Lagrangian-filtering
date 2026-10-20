@@ -1,4 +1,5 @@
 #!/bin/bash
+# The data directory defaults to the 576x576x288 run; set KHI_DATA=/path/to/run (no trailing slash) to use another.
 # Submit a grid of abutting crops whose meso grids tile one large region (W=4, L=6, one time slice).
 # Run in the lagfilt environment, from filter_scripts.
 # Usage: [X0=144] [Y0=144] [NX=4] [NY=4] [Z0=120] ./mosaic_submit.sh
@@ -6,7 +7,7 @@
 # and share one lattice (72 and 12 are multiples of the coarse factor 4). X0, Y0, Z0 are the first
 # crop's start cells; the mosaic covers about 72*NX x 72*NY cells in x, y. Default: 4x4 = 16 jobs.
 set -u
-DATA=/scratch/ih3/METHOD_simulations/khi_window_576x576x288_8x8x3_seed1/
+DATA="${KHI_DATA:-/scratch/ih3/METHOD_simulations/khi_window_576x576x288_8x8x3_seed1}/"
 X0=${X0:-144}; Y0=${Y0:-144}; NX=${NX:-4}; NY=${NY:-4}; Z0=${Z0:-120}
 STEP=72
 cd "$(dirname "$0")"
