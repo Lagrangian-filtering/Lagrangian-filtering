@@ -43,7 +43,8 @@ def fake_model(stub, x0=0.4, seed=0, nt=3, shape=(14, 14, 8), spacing=0.01):
     m.meso_vars = {'E_tilde': 0.01 * rng.normal(size=full + (4,)), 'J_tilde': rng.normal(size=full + (4,)),
                    'B_tilde': rng.normal(size=full + (4,)), 'u_tilde': u,
                    'n_tilde': 1.0 + 0.1 * rng.normal(size=full), 'B2_sub': np.abs(rng.normal(size=full)) * 1e-3}
-    m.meso_structures = {'FaradayTensor': F, 'BC': BC}
+    Tm = rng.normal(size=full + (4, 4)); Tm = 0.1 * (Tm + np.swapaxes(Tm, -1, -2)) + np.eye(4) * 2.0
+    m.meso_structures = {'FaradayTensor': F, 'BC': BC, 'SET': Tm}
     m.domain_vars = {'X': list(x0 + spacing * np.arange(shape[0])), 'Y': list(0.5 + spacing * np.arange(shape[1])),
                      'Z': list(0.2 + spacing * np.arange(shape[2])), 'Dx': spacing, 'Dy': spacing, 'Dz': spacing,
                      'Dt': spacing}
@@ -135,6 +136,19 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
         d = np.load(os.path.join(out, 'covariance_split.npz'))
         self.assertEqual(list(d['pieces']), ['ss', 'tt', 'ts', 'vv'])      # 3 slices: all four pieces
         self.assertEqual(d['vB_joint_coeffs'].shape, (4,))
+
+    def test_regress_stress_model(self):
+        out = os.path.join(self.tmp, 'stress')
+        path = os.path.join(self.tmp, 's.pickle')
+        m = fake_model(self.stub)
+        m.meso_structures['BC'] = m.meso_vars['n_tilde'][..., None] * m.meso_vars['u_tilde']      # timelike, N = n u
+        with open(path, 'wb') as fh:
+            pickle.dump(m, fh)
+        self.run_script('regress_stress_model.py', path, '--block', '6', '6', '3',
+                        '--min-points', '20', '--n-null', '3', '--outdir', out)
+        d = np.load(os.path.join(out, 'stress_model.npz'))
+        self.assertEqual(d['q_coeffs'].shape, (2,))
+        self.assertEqual(d['p_coeffs'].shape, (1,))
 
     def test_gradient_scan_summary(self):
         # two "widths" through the label mechanism the scan scripts use, then the summarizer

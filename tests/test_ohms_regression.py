@@ -318,5 +318,128 @@ class TestOhmsRegression(unittest.TestCase):
         self.assertTrue(np.all(np.isfinite(maps['coeff'][1])))      # the other operators are untouched
 
 
+MINK = np.diag([-1.0, 1.0, 1.0, 1.0])
+
+
+def _boost(v):
+    """Lorentz boost matrix Lambda^a_b taking (1,0,0,0) to gamma (1, v)."""
+    v = np.asarray(v, dtype=float)
+    g = 1.0 / np.sqrt(1.0 - v @ v)
+    L = np.eye(4)
+    L[0, 0] = g
+    L[0, 1:] = L[1:, 0] = g * v
+    vv = v @ v
+    L[1:, 1:] += ((g - 1.0) * np.outer(v, v) / vv) if vv > 0 else 0.0
+    return L
+
+
+class TestStressTensor(unittest.TestCase):
+    def test_decompose_round_trip_boosted(self):
+        rng = np.random.default_rng(3)
+        for v in ([0, 0, 0], [0.3, -0.2, 0.4], [-0.6, 0.1, 0.2]):
+            L = _boost(v)
+            u = L[:, 0]
+            eps, p = 2.3, 0.7
+            q = L @ np.array([0, 0.1, -0.2, 0.05])                       # spatial in the rest frame
+            A = rng.normal(size=(3, 3)); A = A + A.T; A -= np.trace(A) / 3 * np.eye(3)
+            pi = L @ np.pad(A, ((1, 0), (1, 0))) @ L.T                   # trace-free, spatial in the rest frame
+            h = MINK + np.outer(u, u)                                    # h^{ab} (inverse metric is MINK)
+            T = eps * np.outer(u, u) + p * h + np.outer(q, u) + np.outer(u, q) + pi
+            d = OR.decompose_set(T, u, MINK)
+            self.assertAlmostEqual(float(d['eps']), eps, places=10)
+            self.assertAlmostEqual(float(d['p']), p, places=10)
+            np.testing.assert_allclose(d['q'], q, atol=1e-10)
+            np.testing.assert_allclose(d['pi'], pi, atol=1e-10)
+
+    def test_weights_give_the_invariant_norm(self):
+        pi = np.zeros((4, 4)); pi[1, 2] = pi[2, 1] = 1.0; pi[0, 1] = pi[1, 0] = 0.5
+        w = OR.set_weights(MINK)
+        lowered = MINK @ pi @ MINK
+        self.assertAlmostEqual(float(np.sum(w * pi.reshape(16) ** 2)), float(np.sum(lowered * pi)))
+
+    def test_weighted_fit_recovers_coefficient(self):
+        rng = np.random.default_rng(1)
+        O = rng.normal(size=(4, 5, 5, 3, 16))
+        w = OR.set_weights(MINK)
+        fit = OR.fit_region(1.7 * O, {'a': O}, ('a',), weights=w)
+        self.assertAlmostEqual(fit['a'], 1.7, places=10)
+        self.assertAlmostEqual(OR.prediction_r2(O, O, weights=w), 1.0)
+
+    def _filtered(self, W, n=36, nq=3):
+        """Filter analytic smooth micro fields with the 27-point quadrature in each point's rest space (fields are
+        time independent, so only the spatial part of the boosted legs matters). Returns meso fields on an n^3 grid."""
+        h = 1.0 / n
+        ax = (np.arange(n) + 0.5) * h
+        X = np.stack(np.meshgrid(ax, ax, ax, indexing='ij'), axis=-1)
+
+        def micro(x):
+            k = 2 * np.pi
+            sx, sy, sz = (np.sin(k * x[..., i] + ph) for i, ph in enumerate((0.3, 1.1, 2.0)))
+            cx, cy, cz = (np.cos(k * x[..., i] + ph) for i, ph in enumerate((0.3, 1.1, 2.0)))
+            v = 0.25 * np.stack([sy * cz, sz * cx, sx * cy], axis=-1)
+            dens = 1.0 + 0.3 * sx * sy
+            w = 2.0 + 0.4 * cy * sz
+            pr = 0.5 + 0.1 * cz * sx
+            gam = 1.0 / np.sqrt(1.0 - np.sum(v ** 2, axis=-1))
+            u = np.concatenate([gam[..., None], gam[..., None] * v], axis=-1)
+            nvec = dens[..., None] * u
+            s = w / dens ** 2
+            T = s[..., None, None] * nvec[..., :, None] * nvec[..., None, :] + pr[..., None, None] * MINK
+            return nvec, s, T
+
+        # pass 1: lab-box means give the observer; pass 2: boosted-leg quadrature around each point
+        pts = np.array([0.0, np.sqrt(3.0 / 5.0), -np.sqrt(3.0 / 5.0)]) * W / 2.0
+        wts = np.array([4.0 / 9.0, 5.0 / 18.0, 5.0 / 18.0])
+
+        def average(U, field):
+            N = None
+            for i, (a, wa) in enumerate(zip(pts, wts)):
+                for j, (b, wb) in enumerate(zip(pts, wts)):
+                    for k, (c, wc) in enumerate(zip(pts, wts)):
+                        off = np.einsum('...ij,j->...i', U, np.array([a, b, c]))
+                        f = field(X + off)
+                        N = wa * wb * wc * f if N is None else N + wa * wb * wc * f
+            return N
+
+        N0 = average(np.broadcast_to(np.eye(3), X.shape[:3] + (3, 3)), lambda x: micro(x)[0])
+        u0 = N0 / np.sqrt(-np.einsum('...a,ab,...b->...', N0, MINK, N0))[..., None]
+        v0 = u0[..., 1:] / u0[..., :1]
+        vv = np.sum(v0 ** 2, axis=-1)[..., None, None]
+        g0 = u0[..., 0][..., None, None]
+        U = np.eye(3) + (g0 - 1.0) * v0[..., :, None] * v0[..., None, :] / np.maximum(vv, 1e-30)   # spatial boost block
+        N = average(U, lambda x: micro(x)[0])
+        T = average(U, lambda x: micro(x)[2])
+        u = N / np.sqrt(-np.einsum('...a,ab,...b->...', N, MINK, N))[..., None]
+        return h, N[None], T[None], u[None]
+
+    def _errors(self, W):
+        h, N, T, u = self._filtered(W)
+        d = OR.decompose_set(T, u, MINK)
+        ntil = np.sqrt(-np.einsum('...a,ab,...b->...', N, MINK, N))
+        s = (d['eps'] + d['p']) / ntil ** 2
+        vel = u[..., 1:] / u[..., :1]
+        m = OR.stress_model(N, s, u, vel, (h, h, h), W ** 2 / 12.0, MINK, dt=None)
+        sl = (slice(None),) + (slice(4, -4),) * 3
+        wt = OR.set_weights(MINK)
+        err = {}
+        pi_t, pi_p = d['pi'][sl].reshape(-1, 16), m['pi'][sl].reshape(-1, 16)
+        q_t, q_p = d['q'][sl], (m['q1'] + m['q2'])[sl]
+        err['pi'] = 1.0 - OR.prediction_r2(pi_t, pi_p, weights=wt)
+        err['q'] = 1.0 - OR.prediction_r2(q_t, q_p)
+        err['pi_amp'] = float(np.sqrt(np.sum(wt * pi_t ** 2)))
+        err['q_amp'] = float(np.sqrt(OR.mink_dot(q_t, q_t).sum()))
+        return err
+
+    def test_second_order_model_matches_filtered_stress(self):
+        e1, e2 = self._errors(0.2), self._errors(0.1)
+        # the sub-filter stress and heat flux are genuinely there ...
+        self.assertGreater(e1['pi_amp'], 0.0); self.assertGreater(e1['q_amp'], 0.0)
+        # ... the parameter-free model gets almost all of it ...
+        self.assertLess(e1['pi'], 0.05); self.assertLess(e1['q'], 0.05)
+        # ... and the residual (relative, squared) falls like W^4 when the filter is halved
+        self.assertLess(e2['pi'], e1['pi'] / 8.0 + 1e-6)
+        self.assertLess(e2['q'], e1['q'] / 8.0 + 1e-6)
+
+
 if __name__ == '__main__':
     unittest.main()

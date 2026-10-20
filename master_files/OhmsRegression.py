@@ -43,7 +43,14 @@ def mink_dot(a, b):
     return -a[..., 0] * b[..., 0] + np.sum(a[..., 1:] * b[..., 1:], axis=-1)
 
 
-def fit_region(E, ops, names):
+def _wdot(a, b, weights=None):
+    """Sum over the last axis of w * a * b; Minkowski (-+++) when weights is None."""
+    if weights is None:
+        return mink_dot(a, b)
+    return np.sum(np.asarray(weights) * a * b, axis=-1)
+
+
+def fit_region(E, ops, names, weights=None):
     """
     Least-squares fit of one set of constant coefficients to all points given.
 
@@ -53,15 +60,20 @@ def fit_region(E, ops, names):
     Returns a dict with the coefficients (NaN for terms not included), 'n' (points),
     'rss' (summed squared residual norm), 'R2' = 1 - rss / sum|E|^2, and 'EE'. R2 is
     uncentred: the model has no intercept, so 0 means no better than predicting E = 0.
+
+    weights: optional length-k weights for the product (the default is the Minkowski product on 4-vectors);
+    with weights the last axis can hold any k components, e.g. 16 flattened tensor components.
     """
-    E = np.asarray(E, dtype=float).reshape(-1, 4)
+    E = np.asarray(E, dtype=float)
+    k = E.shape[-1]
+    E = E.reshape(-1, k)
     names = tuple(names)
-    EE = float(mink_dot(E, E).sum())
+    EE = float(_wdot(E, E, weights).sum())
     coeffs = {t: np.nan for t in TERMS}
     if names:
-        O = [np.asarray(ops[t], dtype=float).reshape(-1, 4) for t in names]
-        G = np.array([[mink_dot(a, b).sum() for b in O] for a in O])
-        r = np.array([mink_dot(a, E).sum() for a in O])
+        O = [np.asarray(ops[t], dtype=float).reshape(-1, k) for t in names]
+        G = np.array([[_wdot(a, b, weights).sum() for b in O] for a in O])
+        r = np.array([_wdot(a, E, weights).sum() for a in O])
         # lstsq: G is singular when operators are linearly dependent over the region
         c, *_ = np.linalg.lstsq(G, r, rcond=None)
         rss = EE - 2.0 * c @ r + c @ G @ c
@@ -97,7 +109,7 @@ def _edges(n, b):
     return edges
 
 
-def tile_fits(E5, ops5, names, block, min_points=1):
+def tile_fits(E5, ops5, names, block, min_points=1, weights=None):
     """
     Fit constant coefficients separately in each tile of a (Nt, Nx, Ny, Nz, 4) meso grid.
 
@@ -112,7 +124,7 @@ def tile_fits(E5, ops5, names, block, min_points=1):
         sl = (slice(None), slice(x0, x1), slice(y0, y1), slice(z0, z1))
         if Nt * (x1 - x0) * (y1 - y0) * (z1 - z0) < min_points:
             continue
-        fit = fit_region(E5[sl], {t: o[sl] for t, o in ops5.items()}, names)
+        fit = fit_region(E5[sl], {t: o[sl] for t, o in ops5.items()}, names, weights)
         fit['tile'] = ((x0, x1), (y0, y1), (z0, z1))
         fits.append(fit)
     return fits
@@ -129,7 +141,7 @@ def permutation_null(E, ops, names, n_perm=50, seed=0):
     return np.array([fit_region(E[rng.permutation(len(E))], ops, names)['R2'] for _ in range(n_perm)])
 
 
-def shift_null(E5, ops5, names, n_perm=100, min_shift=3, seed=0):
+def shift_null(E5, ops5, names, n_perm=100, min_shift=3, seed=0, weights=None):
     """
     Chance level of the fit that respects spatial correlation.
 
@@ -154,7 +166,7 @@ def shift_null(E5, ops5, names, n_perm=100, min_shift=3, seed=0):
         shifts = [int(rng.integers(min_shift, n - min_shift + 1)) if ok else 0
                   for n, ok in zip(lengths, shiftable)]
         Es = np.roll(E5, shift=shifts, axis=(1, 2, 3))
-        out.append(fit_region(Es, ops5, names)['R2'])
+        out.append(fit_region(Es, ops5, names, weights)['R2'])
     return np.array(out)
 
 
@@ -432,13 +444,15 @@ def gradient_model_parts(v, B, D, u, spacings, sigma2, dt=None):
     return out
 
 
-def prediction_r2(E, pred):
-    """R2 of a parameter-free prediction: 1 - |E - pred|^2 / |E|^2 (can be negative)."""
-    E = np.asarray(E, dtype=float).reshape(-1, 4)
-    pred = np.asarray(pred, dtype=float).reshape(-1, 4)
-    EE = mink_dot(E, E).sum()
+def prediction_r2(E, pred, weights=None):
+    """R2 of a parameter-free prediction: 1 - |E - pred|^2 / |E|^2 (can be negative). See fit_region for weights."""
+    E = np.asarray(E, dtype=float)
+    k = E.shape[-1]
+    E = E.reshape(-1, k)
+    pred = np.asarray(pred, dtype=float).reshape(-1, k)
+    EE = _wdot(E, E, weights).sum()
     r = E - pred
-    return float(1.0 - mink_dot(r, r).sum() / EE) if EE > 0 else float('nan')
+    return float(1.0 - _wdot(r, r, weights).sum() / EE) if EE > 0 else float('nan')
 
 
 def subgrid_B_energy(BSq_filt, B_lab_tilde):
@@ -446,7 +460,7 @@ def subgrid_B_energy(BSq_filt, B_lab_tilde):
     return np.asarray(BSq_filt) - np.sum(np.asarray(B_lab_tilde) ** 2, axis=-1)
 
 
-def prediction_shift_null(E5, pred5, n_perm=50, min_shift=3, seed=0):
+def prediction_shift_null(E5, pred5, n_perm=50, min_shift=3, seed=0, weights=None):
     """
     Chance level for prediction_r2: R2 of the (parameter-free) prediction when E is circularly
     shifted relative to it, keeping spatial structure (as shift_null). Time is not shifted.
@@ -460,5 +474,87 @@ def prediction_shift_null(E5, pred5, n_perm=50, min_shift=3, seed=0):
     out = []
     for _ in range(n_perm):
         shifts = [int(rng.integers(min_shift, n - min_shift + 1)) if ok else 0 for n, ok in zip(lengths, shiftable)]
-        out.append(prediction_r2(np.roll(E5, shift=shifts, axis=(1, 2, 3)), pred5))
+        out.append(prediction_r2(np.roll(E5, shift=shifts, axis=(1, 2, 3)), pred5, weights))
     return np.array(out)
+
+
+# ---------------------------------------------------------------------------------------
+# Stress-energy tensor: second-order model of the sub-filter stress and heat flux
+# ---------------------------------------------------------------------------------------
+#
+# Micro: T^{ab} = s n^a n^b + p g^{ab}, with s = w/n^2 (w = n h the enthalpy density) and n^a = n u^a.
+# Filtering, to second order in the filter width:
+#
+#     <T^{ab}> = s_ n^a n^b + p_ g^{ab} + C^{ab},
+#     C^{ab}   = s_ cov(n^a, n^b) + N^b cov(s, n^a) + N^a cov(s, n^b),      N^a = <n^a>,
+#
+# with cov(f, g) = sigma^2 * covariance_bracket(f, g) (the same filter covariance as for E~). Relative to the
+# Favre observer u~ = N/|N| (so N^a = n~ u~^a), with h^{ab} = g^{ab} + u~^a u~^b and the usual definitions
+#
+#     eps~ = u_a u_b T^{ab},  p~ = h_ab T^{ab}/3,  q^a = -h^a_c u_d T^{cd},  pi^{ab} = h^a_c h^b_d T^{cd} - p~ h^{ab},
+#
+# the ideal terms drop out of q and pi (h N = 0, h g h = h), leaving
+#
+#     pi^{ab}_pred = s~ TF[h X h]^{ab},               X^{cd} = sigma^2 covariance_bracket(N, N; outer),
+#     q^a_pred     = -s~ h^a_c X^{cd} u_d  +  n~ h^a_c Y^c,   Y^c = sigma^2 covariance_bracket(s, N),
+#
+# s~ = (eps~ + p~)/n~^2, TF = trace-free part with respect to h. No fitted constants: expected coefficient
+# +1 for each of pi_pred, q1 (the first q term) and q2 (the second).
+
+def _inverse_metric(metric):
+    return np.linalg.inv(np.asarray(metric, dtype=float))
+
+
+def decompose_set(T, u, metric):
+    """
+    Split T^{ab} (shape (...,4,4), upper indices) relative to the observer u^a (...,4) into
+    eps, p, q^a (...,4), pi^{ab} (...,4,4), following the definitions above. Exact: for
+    T = eps u u + p h + q u + u q + pi the inputs are recovered.
+    """
+    g = np.asarray(metric, dtype=float)
+    ginv = _inverse_metric(g)
+    ul = np.einsum('ab,...b->...a', g, u)
+    hup = ginv + u[..., :, None] * u[..., None, :]                       # h^{ab}
+    hmix = np.eye(4) + u[..., :, None] * ul[..., None, :]                # h^a_c
+    hlow = g + ul[..., :, None] * ul[..., None, :]                       # h_{ab}
+    eps = np.einsum('...a,...b,...ab->...', ul, ul, T)
+    p = np.einsum('...ab,...ab->...', hlow, T) / 3.0
+    q = -np.einsum('...ac,...d,...cd->...a', hmix, ul, T)
+    pi = np.einsum('...ac,...bd,...cd->...ab', hmix, hmix, T) - p[..., None, None] * hup
+    return {'eps': eps, 'p': p, 'q': q, 'pi': pi}
+
+
+def stress_model(N, s, u, v, spacings, sigma2, metric, dt=None):
+    """
+    Second-order model of the sub-filter anisotropic stress and heat flux (see the derivation above).
+
+    N: filtered baryon current <n^a> (Nt,Nx,Ny,Nz,4); s: filtered-field estimate (eps~ + p~)/n~^2
+    (Nt,Nx,Ny,Nz); u: meso observer u~ (...,4); v = u~^i/u~^0 (...,3), the advection velocity; sigma2 = W^2/12;
+    metric: 4x4. Returns {'pi': ..., 'q1': ..., 'q2': ...} (pi shape (...,4,4), q shape (...,4)), each with
+    expected coefficient +1; the predicted heat flux is q1 + q2.
+    """
+    g = np.asarray(metric, dtype=float)
+    ginv = _inverse_metric(g)
+    gamma = u[..., 0]
+    ul = np.einsum('ab,...b->...a', g, u)
+    hup = ginv + u[..., :, None] * u[..., None, :]
+    hmix = np.eye(4) + u[..., :, None] * ul[..., None, :]
+    hlow = g + ul[..., :, None] * ul[..., None, :]
+    ntil = np.sqrt(-np.einsum('...a,...a->...', N, np.einsum('ab,...b->...a', g, N)))
+
+    outer = lambda x, y: x[..., :, None] * y[..., None, :]
+    X = sigma2 * covariance_bracket(N, N, v, gamma, spacings, dt, outer)
+    Y = sigma2 * covariance_bracket(s, N, v, gamma, spacings, dt, _scalar_times_vector)
+
+    hXh = np.einsum('...ac,...bd,...cd->...ab', hmix, hmix, X)
+    trace = np.einsum('...ab,...ab->...', hlow, hXh) / 3.0
+    pi = s[..., None, None] * (hXh - trace[..., None, None] * hup)
+    q1 = -s[..., None] * np.einsum('...ac,...cd,...d->...a', hmix, X, ul)
+    q2 = ntil[..., None] * np.einsum('...ac,...c->...a', hmix, Y)
+    return {'pi': pi, 'q1': q1, 'q2': q2}
+
+
+def set_weights(metric):
+    """Weights for the flattened (16) tensor product pi_ab pi^ab with a diagonal metric: sign(g_aa g_bb)."""
+    d = np.sign(np.diag(np.asarray(metric, dtype=float)))
+    return np.outer(d, d).reshape(16)
