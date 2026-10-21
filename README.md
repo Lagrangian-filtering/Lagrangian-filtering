@@ -27,6 +27,11 @@ The key script in here is `pickling_meso.py`, which can be used to run simulatio
 The folder `calibration_scripts` contains scripts for calibrating and comparing subgrid models. In particular there are scripts for visualizing correlations, performing regressions and checking the performance of the a-priori tests. This folder is structured in a similar fashion as `filter_scripts`: it contains a single configuration file, `config_calibration.txt` and example submit scripts. 
 Each script begins with a short description of what it is intended to do. 
 
+## MHD EXTENSION (feature branch `feature/mhd-ideal-3d-filtering`)
+Covariant filtering of ideal-MHD (SRMHD) output of [METHOD](https://github.com/AlexJamesWright/METHOD) (Sec. 6D of the higher-level paper): `IdealMHD_3D` micro model, the electromagnetic structures, `resMHD_3D` meso model, and tests of
+models of the sub-filter electromotive force, Maxwell stress and Lorentz force (`master_files/OhmsRegression.py`). Pipeline commands and the analysis scripts are described in `filter_scripts/README.md`, the tests in `tests/README.md`;
+design, derivations and results are in the planning notes (`mhd_filtering_extension.md` and `closure_stage2_design.md` in the `action_filtering` repository, `planning/`).
+
 # AUTHORS
 * [Dr. Thomas Celora](https://www.researchgate.net/profile/Thomas-Celora)
 * [Mr. Marcus Hatton](https://www.southampton.ac.uk/people/5y8l7z/mr-marcus-hatton)

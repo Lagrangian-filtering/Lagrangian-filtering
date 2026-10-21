@@ -13,6 +13,16 @@ residual), so the model can genuinely fail.
 Pure numpy and independent of the rest of the repo, so it can be tested on its own. All
 vectors are 4-vectors orthogonal to u_tilde, so the Minkowski product (-+++) is positive
 on them.
+
+Contents (each section has a comment block with its derivation):
+  - constant-coefficient regression, subsets, tiles, nulls (fit_region ... prediction_shift_null): Ohm's-law terms, shift null, tile spread
+  - local sliding-window fits and winner maps (local_term_maps, winner_map, local_null_threshold); mosaics (merge_meso_tiles)
+  - second-order (gradient) model of E_tilde and its covariance split (covariance_bracket*, gradient_model_*; derivation above them)
+  - stress-energy tensor model, fluid frame (decompose_set, stress_model): sub-filter stress and heat flux
+  - sub-filter Lorentz force (lorentz_force_model): F_closure = -C - sigma u_a F^{ab}
+  - EM flux deficits for a coarse run, lab frame (em_flux_deficits): EMF, Poynting, Maxwell stress, energy density
+  - 4-covariant form (levi_civita_up, faraday_ideal_sign, covariant_emf, theta, covariant_em_deficit[_parts])
+The filter variance sigma^2 = W^2/12 for a width W; linear interpolation of the micro data inflates it (planning notes, section 8.7).
 """
 import itertools
 
