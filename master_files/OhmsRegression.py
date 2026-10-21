@@ -760,11 +760,11 @@ def theta(X, Y, metric):
     return sym - 0.25 * ginv * XY[..., None, None]
 
 
-def covariant_em_deficit(F_r, u, E, spacings, sigma2, metric, dt=None):
+def covariant_em_deficit_parts(F_r, u, E, spacings, sigma2, metric, dt=None):
     """
-    Formula (3): Delta^{ab} = 2 Theta^{ab}(F_r, u ^ E) + sigma^2 h^{mu nu} Theta^{ab}(grad_mu F_r, grad_nu F_r), with u the observer u~^a,
-    E the fluid-frame electric field E~^a (e.g. from covariant_emf), F_r the resolved ideal Faraday tensor (...,4,4).
-    Returns Delta^{ab} (...,4,4); the closure's source is -nabla_a Delta^{ab}.
+    The two parts of formula (3): lin = 2 Theta^{ab}(F_r, u ^ E) (linear in the fluid-frame EMF E~) and
+    quad = sigma^2 h^{mu nu} Theta^{ab}(grad_mu F_r, grad_nu F_r). F_r: resolved ideal Faraday tensor (...,4,4); u: observer u~^a (...,4);
+    E: fluid-frame electric field E~^a (...,4) (the data's, or covariant_emf's). Returns (lin, quad), each (...,4,4).
     """
     g = np.asarray(metric, dtype=float)
     ginv = np.linalg.inv(g)
@@ -775,6 +775,13 @@ def covariant_em_deficit(F_r, u, E, spacings, sigma2, metric, dt=None):
     for mu in range(4):
         for nu in range(4):
             cov = cov + h[..., mu, nu][..., None, None] * theta(dF[mu], dF[nu], g)
-    return 2.0 * theta(F_r, wedge, g) + sigma2 * cov
+    return 2.0 * theta(F_r, wedge, g), sigma2 * cov
 
 
+def covariant_em_deficit(F_r, u, E, spacings, sigma2, metric, dt=None):
+    """
+    Formula (3): Delta^{ab} = 2 Theta^{ab}(F_r, u ^ E) + sigma^2 h^{mu nu} Theta^{ab}(grad_mu F_r, grad_nu F_r), the sum of covariant_em_deficit_parts.
+    The coarse run's source is -d_j Delta^{jb}.
+    """
+    lin, quad = covariant_em_deficit_parts(F_r, u, E, spacings, sigma2, metric, dt)
+    return lin + quad

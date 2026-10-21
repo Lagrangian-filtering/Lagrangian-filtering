@@ -210,6 +210,57 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
         d = np.load(os.path.join(out, 'backscatter.npz'))
         self.assertEqual(d['values'].shape[1], 4)
 
+    def test_regress_em_deficits(self):
+        out = os.path.join(self.tmp, 'emdef')
+        path = os.path.join(self.tmp, 'e.pickle')
+        m = fake_model(self.stub)
+        rng = np.random.default_rng(11)
+        shape = m.meso_vars['u_tilde'].shape
+        T = rng.normal(size=shape + (4,)); m.meso_structures['SET_EM'] = T + np.swapaxes(T, -1, -2)
+        with open(path, 'wb') as fh:
+            pickle.dump(m, fh)
+        self.run_script('regress_em_deficits.py', path, '--block', '6', '6', '3', '--min-points', '20', '--n-null', '3', '--outdir', out)
+        d = np.load(os.path.join(out, 'em_deficits.npz'))
+        self.assertEqual(d['sources'].shape[1], 2)
+
+    def test_regress_em_deficits_refuses_old_pickle(self):
+        path = os.path.join(self.tmp, 'old.pickle')
+        with open(path, 'wb') as fh:
+            pickle.dump(fake_model(self.stub), fh)
+        with self.assertRaises(SystemExit):
+            self.run_script('regress_em_deficits.py', path, '--outdir', os.path.join(self.tmp, 'x'))
+
+    def test_regress_em_deficits_on_analytic_data(self):
+        """Fed the exactly filtered analytic fields of TestCovariantClosure, the script's parameter-free model must score near 1."""
+        from test_ohms_regression import TestCovariantClosure
+        W = 0.1
+        h, N, F, T, nt, ut = TestCovariantClosure()._setup(W, n=30)
+        m = self.stub.FakeMeso()
+        m.metric = np.diag([-1.0, 1.0, 1.0, 1.0])
+        m.filter = SimpleNamespace(filter_width=W)
+        m.meso_vars = {'u_tilde': ut, 'n_tilde': nt}
+        m.meso_structures = {'FaradayTensor': F, 'SET_EM': T, 'BC': N}
+        ax = list(0.5 + h * np.arange(30))
+        m.domain_vars = {'X': ax, 'Y': ax, 'Z': ax, 'Dx': h, 'Dy': h, 'Dz': h, 'Dt': h}
+        path = os.path.join(self.tmp, 'a.pickle')
+        with open(path, 'wb') as fh:
+            pickle.dump(m, fh)
+        buf = io.StringIO()
+        sys.argv = ['regress_em_deficits.py', path, '--block', '12', '12', '12', '--min-points', '50', '--n-null', '3',
+                    '--outdir', os.path.join(self.tmp, 'ana')]
+        with contextlib.redirect_stdout(buf):
+            runpy.run_path(os.path.join(SCRIPTS, 'regress_em_deficits.py'), run_name='__main__')
+        text = buf.getvalue()
+        blocks = text.split("=" * 100)
+        def r2_of(title_part):
+            blk = [b for b in blocks if title_part in b.splitlines()[1 if b.startswith("\n") else 0]][0]
+            line = [l for l in blk.splitlines() if "global R2" in l][0]
+            return float(line.split("global R2 =")[1].split()[0])
+        self.assertGreater(r2_of("E~ from the data"), 0.97)
+        self.assertGreater(r2_of("density term on"), 0.97)
+        # the stress deficit is dominated by the quadratic term, so the density term of E~ changes its score only a little
+        self.assertGreater(r2_of("density term off"), 0.95)
+
     def test_gradient_scan_summary(self):
         # two "widths" through the label mechanism the scan scripts use, then the summarizer
         root = os.path.join(self.tmp, 'gscan')
