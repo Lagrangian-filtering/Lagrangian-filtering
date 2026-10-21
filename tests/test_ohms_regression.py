@@ -519,5 +519,54 @@ class TestLorentzClosure(unittest.TestCase):
         self.assertLess(e2['full'], e1['full'] / 8.0 + 1e-6)             # residual falls ~ W^4
 
 
+class TestEMFluxDeficits(unittest.TestCase):
+    """The EMF, Poynting-flux, Maxwell-stress and energy-density deficits against analytic fields filtered with the 27-point quadrature."""
+
+    def _errors(self, W, n=36):
+        h = 1.0 / n
+        ax = (np.arange(n) + 0.5) * h
+        X = np.stack(np.meshgrid(ax, ax, ax, indexing='ij'), axis=-1)
+        k = 2 * np.pi
+        pts = np.array([0.0, np.sqrt(3.0 / 5.0), -np.sqrt(3.0 / 5.0)]) * W / 2.0
+        wts = np.array([4.0 / 9.0, 5.0 / 18.0, 5.0 / 18.0])
+
+        def micro(x):
+            s = [np.sin(k * x[..., i] + p) for i, p in enumerate((0.3, 1.1, 2.0))]
+            c = [np.cos(k * x[..., i] + p) for i, p in enumerate((0.3, 1.1, 2.0))]
+            v = 0.35 * np.stack([s[1] * c[2], s[2] * c[0], s[0] * c[1]], axis=-1)
+            B = np.stack([1.0 + 0.5 * c[0] * s[1], 0.8 * c[1] * s[2], 0.6 * c[2] * s[0]], axis=-1)
+            E = -np.cross(v, B)
+            E2, B2 = np.sum(E ** 2, axis=-1), np.sum(B ** 2, axis=-1)
+            T = -E[..., :, None] * E[..., None, :] - B[..., :, None] * B[..., None, :] + 0.5 * np.eye(3) * (E2 + B2)[..., None, None]
+            return v, B, E, T, np.cross(E, B), 0.5 * (E2 + B2)
+
+        acc = None
+        for a, wa in zip(pts, wts):
+            for b, wb in zip(pts, wts):
+                for c, wc in zip(pts, wts):
+                    out = micro(X + np.array([a, b, c]))
+                    acc = [wa * wb * wc * o for o in out] if acc is None else [x + wa * wb * wc * o for x, o in zip(acc, out)]
+        vt, Bt, Et, Tt, Pt, et = (a_[None] for a_ in acc)
+        Er = -np.cross(vt, Bt)
+        sigma2 = W ** 2 / 12.0
+        m = OR.em_flux_deficits(vt, Bt, (h, h, h), sigma2)
+        Tr = -Er[..., :, None] * Er[..., None, :] - Bt[..., :, None] * Bt[..., None, :] + 0.5 * np.eye(3) * (np.sum(Er ** 2, -1) + np.sum(Bt ** 2, -1))[..., None, None]
+        target = {'EMF': Et - Er, 'Poynting': Pt - np.cross(Er, Bt), 'stress': Tt - Tr, 'energy': et - 0.5 * (np.sum(Er ** 2, -1) + np.sum(Bt ** 2, -1))}
+        sl = (slice(None),) + (slice(4, -4),) * 3
+        err = {}
+        for name, t_ in target.items():
+            d = (t_ - m[name])[sl]
+            err[name] = float(np.sum(d ** 2) / np.sum(t_[sl] ** 2))
+        err['size'] = {k_: float(np.sqrt(np.sum(t_[sl] ** 2))) for k_, t_ in target.items()}
+        return err
+
+    def test_deficits_match_filtered_fields(self):
+        e1, e2 = self._errors(0.2), self._errors(0.1)
+        for name in ('EMF', 'Poynting', 'stress', 'energy'):
+            self.assertGreater(e1['size'][name], 0.0)
+            self.assertLess(e1[name], 0.05, name)
+            self.assertLess(e2[name], e1[name] / 8.0 + 1e-8, name)         # relative squared residual falls ~ W^4
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -628,3 +628,42 @@ def lorentz_force_model(j, F, u, v, spacings, sigma2, metric, dt=None):
     charge = -sigma_t[..., None] * np.einsum('ac,...c,...ab->...b', g, u, F)
     return {'cov': -C, 'charge': charge}
 
+
+# ---------------------------------------------------------------------------------------
+# Sub-filter electromagnetic flux deficits for a coarse (LES) run: EMF, Maxwell stress, Poynting flux
+# ---------------------------------------------------------------------------------------
+#
+# Lab frame, flat metric, ideal micro fields E = -v x B. The resolved fields are v (the lab-filtered velocity) and B; E_r = -v x B.
+# To second order, with cov(a, b) = sigma^2 sum_l d_l a d_l b (spatial pieces only),
+#
+#   <E>      = E_r + EMF,                    EMF = -sigma^2 sum_l d_l v x d_l B,
+#   <E x B>  = E_r x B + EMF x B + sigma^2 sum_l d_l E x d_l B,
+#   <T^ij>   = T^ij(E_r, B) + Delta^ij,
+#   Delta^ij = -(E_r^i EMF^j + EMF^i E_r^j) + delta^ij E_r.EMF + sigma^2 sum_l [-d_l E^i d_l E^j - d_l B^i d_l B^j
+#                                                                             + (1/2) delta^ij (|d_l E|^2 + |d_l B|^2)],
+#   <(E^2 + B^2)/2> = (E_r^2 + B^2)/2 + E_r.EMF + (sigma^2/2) sum_l (|d_l E|^2 + |d_l B|^2),
+#
+# with T^ij = -E^i E^j - B^i B^j + (1/2) delta^ij (E^2 + B^2) and d_l E = -d_l v x B - v x d_l B. The O(EMF^2) terms are dropped.
+# The coarse run's momentum, energy and induction sources are -d_j Delta^ij, -d_j (Delta^0j), -curl EMF, with Delta^0j the
+# Poynting-flux deficit above; the energy-density deficit (last line) is a state correction that is not used.
+
+def em_flux_deficits(v, B, spacings, sigma2):
+    """
+    v, B: (Nt, Nx, Ny, Nz, 3) resolved lab-frame velocity and magnetic field; spacings (Dx, Dy, Dz); sigma2 the filter variance.
+    Returns {'EMF': (...,3), 'Poynting': (...,3) the Poynting-flux deficit Delta^{0j}, 'stress': (...,3,3) Delta^{ij},
+    'energy': (...) the energy-density deficit}; see the block comment above.
+    """
+    E = -np.cross(v, B)
+    dv = [np.gradient(v, spacings[l], axis=l + 1) for l in range(3)]
+    dB = [np.gradient(B, spacings[l], axis=l + 1) for l in range(3)]
+    dE = [-np.cross(dv[l], B) - np.cross(v, dB[l]) for l in range(3)]
+    emf = -sigma2 * sum(np.cross(dv[l], dB[l]) for l in range(3))
+    poynting = np.cross(emf, B) + sigma2 * sum(np.cross(dE[l], dB[l]) for l in range(3))
+    eye = np.eye(3)
+    ee = np.sum(E * emf, axis=-1)
+    quad = sum(-dE[l][..., :, None] * dE[l][..., None, :] - dB[l][..., :, None] * dB[l][..., None, :]
+               + 0.5 * eye * (np.sum(dE[l] ** 2, axis=-1) + np.sum(dB[l] ** 2, axis=-1))[..., None, None] for l in range(3))
+    stress = -(E[..., :, None] * emf[..., None, :] + emf[..., :, None] * E[..., None, :]) + eye * ee[..., None, None] + sigma2 * quad
+    energy = ee + 0.5 * sigma2 * sum(np.sum(dE[l] ** 2, axis=-1) + np.sum(dB[l] ** 2, axis=-1) for l in range(3))
+    return {'EMF': emf, 'Poynting': poynting, 'stress': stress, 'energy': energy}
+
