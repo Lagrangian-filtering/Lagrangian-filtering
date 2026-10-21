@@ -590,5 +590,90 @@ class TestEMFluxDeficits(unittest.TestCase):
             self.assertLess(e2['source'][name], e1['source'][name] / 8.0 + 1e-8, name)
 
 
+class TestCovariantClosure(unittest.TestCase):
+    """The 4-covariant EMF and stress deficit (OhmsRegression, 'covariant form') against moving-observer filtered analytic fields."""
+
+    def _setup(self, W, n=36):
+        h = 1.0 / n
+        ax = (np.arange(n) + 0.5) * h
+        X = np.stack(np.meshgrid(ax, ax, ax, indexing='ij'), axis=-1)
+        k = 2 * np.pi
+        pts = np.array([0.0, np.sqrt(3.0 / 5.0), -np.sqrt(3.0 / 5.0)]) * W / 2.0
+        wts = np.array([4.0 / 9.0, 5.0 / 18.0, 5.0 / 18.0])
+        g = MINK
+
+        def micro(x):
+            s = [np.sin(k * x[..., i] + p) for i, p in enumerate((0.3, 1.1, 2.0))]
+            c = [np.cos(k * x[..., i] + p) for i, p in enumerate((0.3, 1.1, 2.0))]
+            v = 0.35 * np.stack([s[1] * c[2], s[2] * c[0], s[0] * c[1]], axis=-1)
+            B = np.stack([1.0 + 0.5 * c[0] * s[1], 0.8 * c[1] * s[2], 0.6 * c[2] * s[0]], axis=-1)
+            nn = 1.0 + 0.3 * s[0] * s[1]
+            E = -np.cross(v, B)
+            gam = 1.0 / np.sqrt(1.0 - np.sum(v ** 2, axis=-1))
+            u = np.concatenate([gam[..., None], gam[..., None] * v], axis=-1)
+            F = np.zeros(x.shape[:-1] + (4, 4))
+            F[..., 0, 1:], F[..., 1:, 0] = E, -E
+            F[..., 1, 2], F[..., 2, 1] = B[..., 2], -B[..., 2]
+            F[..., 2, 3], F[..., 3, 2] = B[..., 0], -B[..., 0]
+            F[..., 3, 1], F[..., 1, 3] = B[..., 1], -B[..., 1]
+            Fl = np.einsum('...ab,bc->...ac', F, g)
+            T = np.einsum('...ac,...bc->...ab', F, Fl) - 0.25 * g * np.einsum('...ab,...cd,ac,bd->...', F, F, g, g)[..., None, None]
+            return nn[..., None] * u, F, T
+
+        def average(U, i):
+            acc = None
+            for a, wa in zip(pts, wts):
+                for b, wb in zip(pts, wts):
+                    for c, wc in zip(pts, wts):
+                        off = np.einsum('...ij,j->...i', U, np.array([a, b, c]))
+                        f = micro(X + off)[i]
+                        acc = wa * wb * wc * f if acc is None else acc + wa * wb * wc * f
+            return acc
+
+        eye = np.broadcast_to(np.eye(3), X.shape[:3] + (3, 3))
+        N0 = average(eye, 0)
+        u0 = N0 / np.sqrt(-np.einsum('...a,ab,...b->...', N0, g, N0))[..., None]
+        v0 = u0[..., 1:] / u0[..., :1]
+        vv = np.sum(v0 ** 2, axis=-1)[..., None, None]
+        U = np.eye(3) + (u0[..., 0][..., None, None] - 1.0) * v0[..., :, None] * v0[..., None, :] / np.maximum(vv, 1e-30)
+        N, F, T = (average(U, i)[None] for i in range(3))
+        nt = np.sqrt(-np.einsum('...a,ab,...b->...', N, g, N))
+        ut = N / nt[..., None]
+        return h, N, F, T, nt, ut
+
+    def test_sign_convention_is_consistent(self):
+        s = OR.faraday_ideal_sign(MINK)
+        self.assertIn(s, (1.0, -1.0))
+
+    def test_covariant_emf_and_stress_deficit(self):
+        g = MINK
+        s = OR.faraday_ideal_sign(g)
+        eps = OR.levi_civita_up(g)
+        res = {}
+        for W in (0.2, 0.1):
+            h, N, F, T, nt, ut = self._setup(W)
+            sigma2 = W ** 2 / 12.0
+            ul = np.einsum('ab,...b->...a', g, ut)
+            Et = np.einsum('...ab,...b->...a', F, ul)                              # E~^a = F~^{ab} u~_b (target)
+            Fl = np.einsum('ac,bd,...cd->...ab', g, g, F)
+            dual = 0.5 * np.einsum('abcd,...cd->...ab', eps, Fl)
+            bt = -np.einsum('...ab,...b->...a', dual, ul)                          # b~^a = -u~_b *F~^{ab}
+            model_E = OR.covariant_emf(ut, bt, nt, (h, h, h), sigma2, g, dt=None, zeta=1.0, s=s)
+            Fr = s * np.einsum('abcd,...c,...d->...ab', eps, ul, np.einsum('ab,...b->...a', g, bt))   # resolved ideal tensor
+            Tr = np.einsum('...ac,...bc->...ab', Fr, np.einsum('...ab,bc->...ac', Fr, g)) \
+                - 0.25 * g * np.einsum('...ab,...cd,ac,bd->...', Fr, Fr, g, g)[..., None, None]
+            target_D = T - Tr
+            model_D = OR.covariant_em_deficit(Fr, ut, model_E, (h, h, h), sigma2, g, dt=None)
+            model_D_exactE = OR.covariant_em_deficit(Fr, ut, Et, (h, h, h), sigma2, g, dt=None)
+            sl = (slice(None),) + (slice(4, -4),) * 3
+            rel = lambda tgt, mod: float(np.sum((tgt - mod)[sl] ** 2) / np.sum(tgt[sl] ** 2))
+            res[W] = {'E': rel(Et, model_E), 'stress': rel(target_D, model_D), 'stress_exactE': rel(target_D, model_D_exactE),
+                      'size_E': float(np.sqrt(np.sum(Et[sl] ** 2))), 'size_D': float(np.sqrt(np.sum(target_D[sl] ** 2)))}
+        self._res = res
+        for name in ('E', 'stress', 'stress_exactE'):
+            self.assertLess(res[0.2][name], 0.1, name)
+            self.assertLess(res[0.1][name], res[0.2][name] / 4.0 + 1e-8, name)
+
+
 if __name__ == '__main__':
     unittest.main()

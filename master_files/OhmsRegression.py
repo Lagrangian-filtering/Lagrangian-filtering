@@ -667,3 +667,114 @@ def em_flux_deficits(v, B, spacings, sigma2):
     energy = ee + 0.5 * sigma2 * sum(np.sum(dE[l] ** 2, axis=-1) + np.sum(dB[l] ** 2, axis=-1) for l in range(3))
     return {'EMF': emf, 'Poynting': poynting, 'stress': stress, 'energy': energy}
 
+
+# ---------------------------------------------------------------------------------------
+# 4-covariant form of the electromagnetic closure
+# ---------------------------------------------------------------------------------------
+#
+# Notation: mostly plus metric g, mu_0 = 1, the meso (Favre) observer u~^a = N^a / n~ with N^a = <n u^a> and n~ = sqrt(-N.N);
+# h^{ab} = g^{ab} + u~^a u~^b projects onto its rest space; F^{ab} is the Faraday tensor and (pipeline convention)
+# E^a = F^{ab} u_b, b^a = -u_b (*F)^{ab}, *F^{ab} = (1/2) eps^{abcd} F_{cd}. For ideal micro fields F^{ab} = s eps^{abcd} u_c b_d
+# (s = +-1 fixes the sign convention of eps; the tests determine it).
+#
+# Covariance of two fields over the box filter (a spatial 3-ball in the observer's rest space):  cov(A, B) = sigma^2 h^{mu nu} grad_mu A grad_nu B
+# (the sum over the three spatial tetrad legs, sum_i e_i^mu e_i^nu = h^{mu nu}). In the lab frame this is
+# sigma^2 [grad A . grad B - d_t A d_t B + (u.d A)(u.d B)] with u the 4-velocity.
+#
+# (1) Fluid-frame sub-filter electric field, the pipeline's E~^a = u~_b <F^{ab}>  (exact to second order, given ideal micro fields):
+#         E~^a = s eps^{abcd} u~_b  sigma^2 h^{mu nu} [ grad_mu u_c grad_nu b_d  -  zeta (grad_mu n / n~) grad_nu u_c  b~_d ],
+#     where the second term (zeta = 1) is the Favre-versus-plain average difference <u_c> - u~_c = -cov(n, u_c) / n~ (the density term);
+# (2) the electromagnetic stress-energy tensor T^{ab} = F^{ac} F^b_c - (1/4) g^{ab} F_{cd} F^{cd} is bilinear in F, so
+#         <T^{ab}> = T^{ab}(F~) + sigma^2 h^{mu nu} Theta^{ab}(grad_mu F, grad_nu F),
+#         Theta^{ab}(X, Y) = (1/2)(X^{ac} Y^b_c + Y^{ac} X^b_c) - (1/4) g^{ab} X_{cd} Y^{cd},
+#     exact to second order with F~ = <F> (no ideal-MHD assumption);
+# (3) the resolved run uses the ideal tensor F_r^{ab} = s eps^{abcd} u~_c b~_d, whose difference from F~ is the electric part:
+#         F~ = F_r + u~ ^ E~  (F~^{ab} = F_r^{ab} + u~^a E~^b - u~^b E~^a), so the deficit relative to the resolved ideal field is
+#         Delta^{ab} = <T^{ab}> - T^{ab}(F_r) = 2 Theta^{ab}(F_r, u~ ^ E~) + sigma^2 h^{mu nu} Theta^{ab}(grad_mu F_r, grad_nu F_r)  (+ O(E~^2)),
+#     and the source of the conservation law  nabla_a T^{ab}_total = 0  is  -nabla_a Delta^{ab}  (its 0j components are the Poynting flux
+#     deficit, the ij components the stress deficit, as in the lab-frame formulas above).
+
+def levi_civita_up(metric):
+    """eps^{abcd} for the given (diagonal +-1) metric, with eps_{0123} = +1 as in Base.LeviCivita4D."""
+    eps = np.zeros((4, 4, 4, 4))
+    for perm in itertools.permutations(range(4)):
+        sign = 1
+        for x in range(4):
+            for y in range(x + 1, 4):
+                if perm[x] > perm[y]:
+                    sign = -sign
+        eps[perm] = sign
+    g = np.asarray(metric, dtype=float)
+    return np.einsum('ae,bf,cg,dh,efgh->abcd', g, g, g, g, eps)
+
+
+def faraday_ideal_sign(metric):
+    """The sign s in F^{ab} = s eps^{abcd} u_c b_d for the pipeline's conventions (b^a = -u_b (*F)^{ab}, *F^{ab} = eps^{abcd} F_{cd} / 2)."""
+    g = np.asarray(metric, dtype=float)
+    eps = levi_civita_up(g)
+    rng = np.random.default_rng(1)
+    v = 0.3 * rng.normal(size=3)
+    u = np.concatenate([[1.0], v]) / np.sqrt(1.0 - v @ v)
+    ul = g @ u
+    b = rng.normal(size=4)
+    b = b + (b @ ul) * u                      # b . u = 0 (u.u = -1)
+    for s in (1.0, -1.0):
+        F = s * np.einsum('abcd,c,d->ab', eps, ul, g @ b)
+        Fl = g @ F @ g
+        dual = 0.5 * np.einsum('abcd,cd->ab', eps, Fl)
+        if np.allclose(-np.einsum('ab,b->a', dual, ul), b):
+            return s
+    raise ValueError("no consistent sign")
+
+
+def covariant_emf(u, b, n, spacings, sigma2, metric, dt=None, zeta=1.0, s=1.0):
+    """
+    Fluid-frame sub-filter electric field, formula (1) above. u: resolved 4-velocity u~^a (...,4); b: resolved comoving field b~^a (...,4);
+    n: resolved rest density n~ (...); fields of shape (Nt,Nx,Ny,Nz,...). Derivatives: lab_derivatives (time derivative zero if dt is None).
+    s: the sign in F^{ab} = s eps^{abcd} u_c b_d for the eps and conventions in use.
+    """
+    g = np.asarray(metric, dtype=float)
+    ginv = np.linalg.inv(g)
+    eps = levi_civita_up(g)
+    ul = np.einsum('ab,...b->...a', g, u)
+    bl = np.einsum('ab,...b->...a', g, b)
+    h = ginv + u[..., :, None] * u[..., None, :]
+    du = np.stack(lab_derivatives(ul, spacings, dt), axis=-2)         # (..., mu, c): d_mu u_c
+    db = np.stack(lab_derivatives(bl, spacings, dt), axis=-2)
+    dn = np.stack(lab_derivatives(n, spacings, dt), axis=-1)           # (..., mu)
+    t1 = np.einsum('...mn,...mc,...nd->...cd', h, du, db)
+    out = np.einsum('abcd,...b,...cd->...a', eps, ul, t1)
+    t2 = np.einsum('...mn,...m,...nc->...c', h, dn / n[..., None], du)
+    out = out - zeta * np.einsum('abcd,...b,...c,...d->...a', eps, ul, t2, bl)
+    return s * sigma2 * out
+
+
+def theta(X, Y, metric):
+    """Theta^{ab}(X, Y) = (1/2)(X^{ac} Y^b_c + Y^{ac} X^b_c) - (1/4) g^{ab} X_{cd} Y^{cd} for X, Y of shape (...,4,4)."""
+    g = np.asarray(metric, dtype=float)
+    ginv = np.linalg.inv(g)
+    Yl = np.einsum('...bd,dc->...bc', Y, g)                  # Y^b_c
+    Xl = np.einsum('...bd,dc->...bc', X, g)
+    sym = 0.5 * (np.einsum('...ac,...bc->...ab', X, Yl) + np.einsum('...ac,...bc->...ab', Y, Xl))
+    XY = np.einsum('...ab,...cd,ac,bd->...', X, Y, g, g)
+    return sym - 0.25 * ginv * XY[..., None, None]
+
+
+def covariant_em_deficit(F_r, u, E, spacings, sigma2, metric, dt=None):
+    """
+    Formula (3): Delta^{ab} = 2 Theta^{ab}(F_r, u ^ E) + sigma^2 h^{mu nu} Theta^{ab}(grad_mu F_r, grad_nu F_r), with u the observer u~^a,
+    E the fluid-frame electric field E~^a (e.g. from covariant_emf), F_r the resolved ideal Faraday tensor (...,4,4).
+    Returns Delta^{ab} (...,4,4); the closure's source is -nabla_a Delta^{ab}.
+    """
+    g = np.asarray(metric, dtype=float)
+    ginv = np.linalg.inv(g)
+    wedge = u[..., :, None] * E[..., None, :] - E[..., :, None] * u[..., None, :]
+    h = ginv + u[..., :, None] * u[..., None, :]
+    dF = lab_derivatives(F_r, spacings, dt)                   # list of 4 arrays (..., 4, 4)
+    cov = 0.0
+    for mu in range(4):
+        for nu in range(4):
+            cov = cov + h[..., mu, nu][..., None, None] * theta(dF[mu], dF[nu], g)
+    return 2.0 * theta(F_r, wedge, g) + sigma2 * cov
+
+
