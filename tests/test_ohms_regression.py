@@ -558,6 +558,25 @@ class TestEMFluxDeficits(unittest.TestCase):
             d = (t_ - m[name])[sl]
             err[name] = float(np.sum(d ** 2) / np.sum(t_[sl] ** 2))
         err['size'] = {k_: float(np.sqrt(np.sum(t_[sl] ** 2))) for k_, t_ in target.items()}
+
+        # the sources a coarse run would add: -d_j Delta^ij (momentum), -d_j Delta^0j (energy), -curl EMF (induction)
+        def div_vec(F):
+            return sum(np.gradient(F[..., l], h, axis=l + 1) for l in range(3))
+
+        def div_tensor(T):
+            return np.stack([sum(np.gradient(T[..., i, l], h, axis=l + 1) for l in range(3)) for i in range(3)], axis=-1)
+
+        def curl_(F):
+            g = lambda c, l: np.gradient(F[..., c], h, axis=l + 1)
+            return np.stack([g(2, 1) - g(1, 2), g(0, 2) - g(2, 0), g(1, 0) - g(0, 1)], axis=-1)
+
+        srcs = {'momentum': (-div_tensor(target['stress']), -div_tensor(m['stress'])),
+                'energy': (-div_vec(target['Poynting']), -div_vec(m['Poynting'])),
+                'induction': (-curl_(target['EMF']), -curl_(m['EMF']))}
+        sl2 = (slice(None),) + (slice(6, -6),) * 3
+        err['source'] = {k_: float(np.sum((a_ - b_)[sl2] ** 2) / np.sum(a_[sl2] ** 2)) for k_, (a_, b_) in srcs.items()}
+        # size of the momentum source against the resolved Maxwell-stress divergence
+        err['source_vs_resolved'] = float(np.sqrt(np.sum(srcs['momentum'][0][sl2] ** 2) / np.sum(div_tensor(Tr)[sl2] ** 2)))
         return err
 
     def test_deficits_match_filtered_fields(self):
@@ -566,6 +585,9 @@ class TestEMFluxDeficits(unittest.TestCase):
             self.assertGreater(e1['size'][name], 0.0)
             self.assertLess(e1[name], 0.05, name)
             self.assertLess(e2[name], e1[name] / 8.0 + 1e-8, name)         # relative squared residual falls ~ W^4
+        for name in ('momentum', 'energy', 'induction'):                   # the divergences / curl, as the coarse run adds them
+            self.assertLess(e1['source'][name], 0.05, name)
+            self.assertLess(e2['source'][name], e1['source'][name] / 8.0 + 1e-8, name)
 
 
 if __name__ == '__main__':
