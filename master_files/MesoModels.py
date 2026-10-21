@@ -2581,8 +2581,8 @@ class resMHD_3D(resHD_3D):
     def __init__(self, micro_model, find_obs, filter, interp_method='linear'):
         super().__init__(micro_model, find_obs, filter, interp_method)
 
-        self.meso_structures_strs = self.meso_structures_strs + ['FaradayTensor', 'ChargeCurrent', 'LorentzForceDensity']
-        for var in ('FaradayTensor', 'ChargeCurrent', 'LorentzForceDensity'):
+        self.meso_structures_strs = self.meso_structures_strs + ['FaradayTensor', 'ChargeCurrent', 'LorentzForceDensity', 'SET_EM']
+        for var in ('FaradayTensor', 'ChargeCurrent', 'LorentzForceDensity', 'SET_EM'):
             self.meso_structures[var] = []
 
         em_scalars = ['sigma_tilde', 'R_tilde', 'alpha_dynamo', 'gamma_hall', 'BSq_filt', 'B2_sub']
@@ -2595,7 +2595,7 @@ class resMHD_3D(resHD_3D):
 
         self.labels_var_dict.update({
             'FaradayTensor': r'$\langle F^{ab}\rangle$', 'ChargeCurrent': r'$\langle j^{a}\rangle$',
-            'LorentzForceDensity': r'$\langle -j_aF^{ab}\rangle$',
+            'LorentzForceDensity': r'$\langle -j_aF^{ab}\rangle$', 'SET_EM': r'$\langle T_{EM}^{ab}\rangle$',
             'sigma_tilde': r'$\tilde{\sigma}$', 'E_tilde': r'$\tilde{E}^a$', 'B_tilde': r'$\tilde{B}^a$',
             'J_tilde': r'$\tilde{J}^a$', 'F_closure': r'$\mathcal{F}^b$', 'Ohm_res': r'$\mathcal{W}^a$',
             'R_tilde': r'$\tilde{R}$', 'alpha_dynamo': r'$\alpha$', 'gamma_hall': r'$\gamma$'})
@@ -2606,7 +2606,7 @@ class resMHD_3D(resHD_3D):
     def setup_meso_grid(self, patch_bdrs, coarse_factor=1, coarse_time=False):
         super().setup_meso_grid(patch_bdrs, coarse_factor, coarse_time)
         Nt, Nx, Ny, Nz = self.domain_vars['Nt'], self.domain_vars['Nx'], self.domain_vars['Ny'], self.domain_vars['Nz']
-        for var in ('FaradayTensor',):
+        for var in ('FaradayTensor', 'SET_EM'):
             self.meso_structures[var] = np.zeros((Nt, Nx, Ny, Nz, 4, 4))
         for var in ('ChargeCurrent', 'LorentzForceDensity'):
             self.meso_structures[var] = np.zeros((Nt, Nx, Ny, Nz, 4))
@@ -2618,7 +2618,7 @@ class resMHD_3D(resHD_3D):
     def setup_mesogrid_smart(self, num_T_slices, spatial_bdrs, coarse_factor):
         super().setup_mesogrid_smart(num_T_slices, spatial_bdrs, coarse_factor)
         Nt, Nx, Ny, Nz = self.domain_vars['Nt'], self.domain_vars['Nx'], self.domain_vars['Ny'], self.domain_vars['Nz']
-        for var in ('FaradayTensor',):
+        for var in ('FaradayTensor', 'SET_EM'):
             self.meso_structures[var] = np.zeros((Nt, Nx, Ny, Nz, 4, 4))
         for var in ('ChargeCurrent', 'LorentzForceDensity'):
             self.meso_structures[var] = np.zeros((Nt, Nx, Ny, Nz, 4))
@@ -2630,7 +2630,7 @@ class resMHD_3D(resHD_3D):
     def filter_micro_vars_parallel(self, n_cpus):
         """
         Same as resHD_3D.filter_micro_vars_parallel, extended with the
-        three new EM structures. Reimplemented (not calling super) because
+        EM structures (FaradayTensor, ChargeCurrent, LorentzForceDensity, SET_EM, BSq). Reimplemented (not calling super) because
         the base method's 'vars' list is a local literal, not an
         overridable attribute.
         """
@@ -2649,7 +2649,7 @@ class resMHD_3D(resHD_3D):
                 print('Observers are not computed on (parts of) the grid!')
                 return None
 
-        vars = ['BC', 'SET', 'p', 'FaradayTensor', 'ChargeCurrent', 'LorentzForceDensity', 'BSq']
+        vars = ['BC', 'SET', 'p', 'FaradayTensor', 'ChargeCurrent', 'LorentzForceDensity', 'SET_EM', 'BSq']
         points_observers = [[points[i], observers[i]] for i in range(len(points))]
 
         filtered_vars = dict.fromkeys(vars)
@@ -2664,6 +2664,7 @@ class resMHD_3D(resHD_3D):
             self.meso_structures['FaradayTensor'][idx] = filtered_vars['FaradayTensor'][i]
             self.meso_structures['ChargeCurrent'][idx] = filtered_vars['ChargeCurrent'][i]
             self.meso_structures['LorentzForceDensity'][idx] = filtered_vars['LorentzForceDensity'][i]
+            self.meso_structures['SET_EM'][idx] = filtered_vars['SET_EM'][i]
             self.meso_vars['BSq_filt'][idx] = filtered_vars['BSq'][i]
 
         # Sub-filter magnetic energy <B^2> - |<B>|^2 (lab frame; >= 0 because both averages use the same
