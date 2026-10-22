@@ -19,6 +19,8 @@ much better than 4 (grid refinement, planning §8.6); `--filter-width` is in mic
 Batch scans (names `khi576_[r<i>_<j>_<k>_]w<W>[_<n>sl][_c<C>]`): `scan_w_submit.sh` / `scan_w_analyse.sh` (a filter-width scan; `REGION=i,j,k NSLICES=n COARSE=c MODE=ohms|gradient`),
 `scan_regions_submit.sh` / `scan_regions_analyse.sh` (a survey of crops), `mosaic_submit.sh` (abutting crops for a mosaic), and the summarizers `summarize_w_scan.py`, `summarize_gradient_scan.py`, `summarize_regions.py`.
 
+**Which windows to analyse.** The closure these scripts test is a second-order expansion for the transfer between resolved and sub-filter scales, expected to work (a hypothesis supported by the a-priori trend, planning/closure_stage2_design.md section 15) in the *developed* phase of the flow: after the onset of field amplification, when the run's kinetic energy is below about a quarter of its initial value and the growth rate of the magnetic energy has fallen below half its peak, and for filter widths of 2-3 resolved cells. Choose the window time from the `diag` lines of the run (METHOD `energyDiagnostics.h`), not a fixed time; results from the shear-layer-formation or the kinematic-growth phases do not test the closure.
+
 ## 2. Analysis scripts (each takes a pickle, does not modify it, writes an `.npz` and a log/figure)
 
 | script | question it answers | example (centre crop, `W = 4`, 3 slices, spacing 2) | output |
