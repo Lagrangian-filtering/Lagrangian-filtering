@@ -106,6 +106,9 @@ def main():
     win = SL.window_sums({**lib, '__E': E}, a.window, a.stride, a.test_function)
     if a.rows == 'windows':
         rows_ops, rows_E = {k: win[k] for k in names}, win['__E']
+    nrows = int(np.prod(np.asarray(rows_E).shape[:-1]))
+    if nrows < 20 * len(names):
+        print("WARNING: %d rows for %d columns (4 numbers per row): the multi-term fit is ill-conditioned and its R2 can exceed 1; use more or smaller windows, or --rows points" % (nrows, len(names)))
     G, r, EE = SL.gram_system(rows_ops, rows_E, names)
     kept, dropped = SL.independent_columns(G, a.tol)
     nk = [names[i] for i in kept]
