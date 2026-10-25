@@ -233,7 +233,7 @@ class TestScript(unittest.TestCase):
         import tempfile
         script = os.path.join(os.path.dirname(__file__), '..', 'filter_scripts', 'regress_sparse_library.py')
         with tempfile.TemporaryDirectory() as d:
-            out = subprocess.run([sys.executable, script, '--synthetic', '--n-fine', '32', '--n-boot', '10', '--n-null', '5', '--outdir', d],
+            out = subprocess.run([sys.executable, script, '--synthetic', '--n-fine', '32', '--n-boot', '10', '--n-null', '5', '--stride', '1', '3', '3', '1', '--outdir', d],
                                  capture_output=True, text=True, check=True).stdout
             self.assertIn('SELECTION at threshold 0.05: dv_x_dB, model_dens', out)
             z = np.load(os.path.join(d, 'sparse_library.npz'))

@@ -135,7 +135,7 @@ def main():
         print("\nSELECTION at threshold %g: %s   R2 %.3f; shift-null 95th percentile of the R2 of the same terms %.3f" % (t_sel, ", ".join(sel), R2_sel, np.percentile(null, 95)))
 
     print("\nBOOTSTRAP over %d windows %s (%s, %s): inclusion frequency and coefficient median [16th, 84th pct] at threshold %g" % (
-        len(win['__E']), tuple(a.window), a.test_function, "tiles" if a.stride is None else "stride %s" % tuple(a.stride), t_sel))
+        len(win['__E']), tuple(a.window), a.test_function, "tiles" if a.stride is None else "stride %s" % (tuple(a.stride),), t_sel))
     bs = SL.bootstrap_inclusion({n: win[n] for n in nk}, win['__E'], nk, t_sel, a.n_boot)
     for n in nk:
         f, med, lo, hi = bs[n]
