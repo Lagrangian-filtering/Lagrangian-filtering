@@ -12,6 +12,10 @@ test function).
     python regress_sparse_library.py /path/to/resMHD3d_khi384_w4_3sl.pickle [--window 1 6 6 3] [--thresholds 0.02 0.05 0.1 0.2]
     python regress_sparse_library.py --synthetic [--extra divv_J=0.5] [--noise 0.1]        # synthetic box-filtered compressible fields with a known answer (--incompressible: div v = 0)
 
+--fourth-order adds the four groups of fourth-order covariance terms (SparseLibrary.fourth_order_forms: sigma^4 times axis-aligned 3+1 and 2+2 and cross 1+1 and 2+1 derivative products of v and B,
+with the coefficients predicted from the moments of the filter; expected: axis31 -(m4/6 sigma^4 - 1/2), axis22 -(m4/4 sigma^4 - 1/4), cross11 -1, cross21 0, with m4 = 1.8 sigma^4 for a continuous box);
+three cells at each edge are then dropped instead of one (third derivatives by repeated central differences).
+
 The fields are the central time slice of the pickle with the edge cells dropped (spatial gradients only: the time pieces of the covariance are < 1 % of |E|, planning notes
 section 8.5); the quadratic forms are mapped to the meso observer with observer_electric as the existing model. Does not modify the pickle.
 """
@@ -42,11 +46,15 @@ def real_data(a):
     spacings = (float(dv['Dx']), float(dv['Dy']), float(dv['Dz']))
     sigma2 = a.sigma2_factor * float(m.filter.filter_width) ** 2 / 12.0
     lib = SL.quadratic_library(vel, B_lab[..., 1:], spacings, sigma2, u[..., 0])
+    if a.fourth_order:
+        for n, x in SL.fourth_order_forms(vel, B_lab[..., 1:], spacings, sigma2).items():
+            lib[n] = OR.observer_electric(x[..., 1:], vel, u[..., 0])
     lib['model_dens'] = SL.density_form(vel, B_lab[..., 1:], D, spacings, sigma2, u[..., 0])
     if not a.no_ohm:
         lib.update(OR.standard_operators(J, B, u, Base.raise_LeviCivita4D(m.metric), m.metric))
     t_sl = slice(Nt // 2, Nt // 2 + 1) if Nt >= 3 else slice(None)
-    s_sl = tuple(slice(1, -1) if n >= 3 else slice(None) for n in E.shape[1:4])
+    tr = 3 if a.fourth_order else 1
+    s_sl = tuple(slice(tr, -tr) if n >= 2 * tr + 1 else slice(None) for n in E.shape[1:4])
     sl = (t_sl,) + s_sl
     info = "meso grid %s, filter width %.4g (sigma^2 = %.3g), meso spacing %.4g" % (E.shape[:4], m.filter.filter_width, sigma2, spacings[0])
     return {k: x[sl] for k, x in lib.items()}, E[sl], info
@@ -57,11 +65,14 @@ def synthetic_data(a):
     m = SL.synthetic_meso(n_fine=a.n_fine, width=a.width, stride=1, seed=a.seed, kmax=2, compressible=comp)
     vel = m['v'] if comp else m['v_plain']
     lib = SL.static_library(vel, m['B'], m['D'], m['spacing'], m['sigma2'], density=comp, ohm=not a.no_ohm)
+    if a.fourth_order:
+        lib.update(SL.fourth_order_forms(vel, m['B'], m['spacing'], m['sigma2']))
     E = SL.spatial4(m['E_favre'] if comp else m['E_exact'])
     for item in a.extra:
         name, c = item.split('=')
         E = E + float(c) * lib[name]
-    sl = (slice(None),) + (slice(2, -2),) * 3
+    tr = 3 if a.fourth_order else 2
+    sl = (slice(None),) + (slice(tr, -tr),) * 3
     if a.noise > 0:
         rng = np.random.default_rng(a.seed + 1)
         rms = np.sqrt(OR.mink_dot(E[sl], E[sl]).mean())
@@ -82,6 +93,7 @@ def main():
     p.add_argument("--width", type=int, default=4)
     p.add_argument("--seed", type=int, default=3)
     p.add_argument("--no-ohm", action="store_true", help="leave the Ohm's-law terms out of the library")
+    p.add_argument("--fourth-order", action="store_true", help="add the fourth-order covariance terms to the library")
     p.add_argument("--sigma2-factor", type=float, default=1.0, help="multiply the nominal sigma^2 = W^2/12 by this (see regress_gradient_model.py)")
     p.add_argument("--window", type=int, nargs=4, default=[1, 6, 6, 3], help="window of the bootstrap rows (t, x, y, z meso cells)")
     p.add_argument("--stride", type=int, nargs=4, default=None, help="window stride (default: the window, i.e. tiles)")

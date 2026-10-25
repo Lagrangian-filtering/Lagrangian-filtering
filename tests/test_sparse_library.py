@@ -243,3 +243,78 @@ class TestScript(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestDeficits(unittest.TestCase):
+    """Stress, Poynting and energy deficits of box-filtered synthetic fields against the library."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.m = SL.synthetic_meso(n_fine=40, width=4, stride=1, seed=3, kmax=2, compressible=False, deficits=True)
+        cls.sl = (slice(None),) + (slice(3, -3),) * 3
+        cls.lib = SL.deficit_library(cls.m['v_plain'], cls.m['B'], cls.m['spacing'], cls.m['sigma2'])
+        cls.y = cls.m['deficit'][cls.sl]
+
+    def fit(self, cls, names):
+        comps, w = SL.DEFICIT_COMPONENTS[cls]
+        ops = {k: x[self.sl] for k, x in self.lib[cls].items()}
+        G, r, EE = SL.gram_system_k(ops, self.y, names, comps, w)
+        c, act, R2 = SL.stlsq(G, r, EE, 0.0)
+        pred = sum(ops[n] for n in names)[..., comps]
+        d = self.y[..., comps]
+        return dict(zip(names, c)), R2, 1.0 - np.sum(w * (d - pred) ** 2) / EE
+
+    def test_structural_model_reproduces_the_exact_deficits_with_unit_coefficients(self):
+        for cls in ('stress', 'poynting', 'energy'):
+            coef, R2, R2_free = self.fit(cls, ['lin_' + cls, 'quad_' + cls])
+            self.assertGreater(R2_free, 0.97, cls)                       # parameter-free
+            for n, c in coef.items():
+                self.assertAlmostEqual(c, 1.0, delta=0.2, msg=n)
+
+    def test_pieces_of_the_quadratic_part_add_up(self):
+        st = self.lib['stress']
+        parts = st['BB_grad'] + st['BB_trace'] + st['EaEa_grad'] + st['EaEa_trace'] + st['EaEb_grad'] + st['EaEb_trace'] + st['EbEb_grad'] + st['EbEb_trace']
+        np.testing.assert_allclose(parts, st['quad_stress'], atol=1e-12 * np.abs(st['quad_stress']).max())
+        en = self.lib['energy']
+        np.testing.assert_allclose(en['BB_energy'] + en['EaEa_energy'] + en['EaEb_energy'] + en['EbEb_energy'], en['quad_energy'], atol=1e-12 * np.abs(en['quad_energy']).max())
+
+    def test_the_library_selects_the_structure_among_the_further_forms(self):
+        comps, w = SL.DEFICIT_COMPONENTS['stress']
+        ops = {k: x[self.sl] for k, x in self.lib['stress'].items()}
+        names = list(ops)
+        G, r, EE = SL.gram_system_k(ops, self.y, names, comps, w)
+        kept, _ = SL.independent_columns(G)
+        c, act, R2 = SL.stlsq(G[np.ix_(kept, kept)], r[kept], EE, 0.05)
+        sel = [names[i] for i, a in zip(kept, act) if a]
+        self.assertEqual(sorted(sel), ['lin_stress', 'quad_stress'])
+        self.assertGreater(R2, 0.99)
+
+    def test_a_class_has_zero_operators_outside_its_components(self):
+        for cls, ops in self.lib.items():
+            comps, _ = SL.DEFICIT_COMPONENTS[cls]
+            for n, x in ops.items():
+                other = np.delete(x, np.arange(10)[comps], axis=-1)
+                self.assertEqual(float(np.abs(other).max()), 0.0, n)
+
+
+class TestFourthOrder(unittest.TestCase):
+    def test_the_predicted_fourth_order_terms_reduce_the_residual(self):
+        n, width = 48, 6
+        m = SL.synthetic_meso(n_fine=n, width=width, stride=1, seed=3, kmax=3, compressible=False)
+        sl = (slice(None),) + (slice(3, -3),) * 3
+        q = SL.quadratic_library(m['v_plain'], m['B'], m['spacing'], m['sigma2'], None, ['dv_x_dB'])['dv_x_dB'][sl]
+        f4 = {k: x[sl] for k, x in SL.fourth_order_forms(m['v_plain'], m['B'], m['spacing'], m['sigma2']).items()}
+        E = SL.spatial4(m['E_exact'])[sl]
+        m4 = (width ** 2 - 1) * (3 * width ** 2 - 7) / 240 * (2 * np.pi / n) ** 4
+        c = SL.fourth_order_coefficients(m['sigma2'], m4)
+        resid = lambda P: SL.OR.mink_dot(E - P, E - P).sum()
+        r2 = resid(-q)
+        r4 = resid(-q + sum(c[k] * f4[k] for k in f4))
+        self.assertLess(r4, 0.15 * r2)                                  # the residual of the second-order model falls by a factor of at least 7
+        self.assertEqual(c['o4_cross21'], 0.0)
+        self.assertAlmostEqual(c['o4_cross11'], -1.0)
+
+    def test_continuous_box_moment_gives_the_continuous_coefficients(self):
+        c = SL.fourth_order_coefficients(1.0, 1.8)
+        self.assertAlmostEqual(c['o4_axis31'], 0.2)                    # -(0.3 - 0.5)
+        self.assertAlmostEqual(c['o4_axis22'], -0.2)                   # -(0.45 - 0.25)

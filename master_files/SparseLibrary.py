@@ -133,6 +133,140 @@ def spatial4(x):
     return a
 
 
+# ---- fourth-order terms of the EMF ----------------------------------------------------------------------------------------------------------------------------------
+#
+# For a separable box filter along each axis with second and fourth moments m2 = sigma^2 and m4 (continuous box of width W: m4 = W^4/80 = 1.8 sigma^4; discrete uniform
+# average of w points, spacing h: m4 = (w^2 - 1)(3 w^2 - 7) h^4 / 240), the covariance of two point fields a, b is, with F_k = 1 + (m2/2) d_k^2 + (m4/24) d_k^4,
+#   cov(a, b) = m2 sum_k a_k b_k + sum_k [ (m4/6) (a_kkk b_k + a_k b_kkk) + (m4/4 - m2^2/4) a_kk b_kk ]
+#               + (m2^2/4) sum_{k<l} [ 4 a_kl b_kl + 2 (a_kkl b_l + a_kll b_k + a_l b_kkl + a_k b_kll) ]  +  O(m2^3)
+# (subscripts: partial derivatives along the axes; checked in one dimension against the exact filter of exponentials). The regression works with the FILTERED fields
+# a~ = F a, b~ = F b, whose derivatives differ from those of a, b at this order (a_k = a~_k - (m2/2) sum_l a~_kll + ...), which changes the coefficients:
+#   cov = m2 sum_k a~_k b~_k + sum_k [ (m4/6 - m2^2/2) (a~_kkk b~_k + a~_k b~_kkk) + (m4/4 - m2^2/4) a~_kk b~_kk ] + m2^2 sum_{k<l} a~_kl b~_kl  +  0 x (the 2+1 cross group).
+# E = -cov(v~, B~) with the cross product. fourth_order_forms returns sigma^4 times the four groups (axis-aligned 3+1 and 2+2, cross 1+1 and 2+1) and
+# fourth_order_coefficients the coefficients predicted in E~ (axis31: -(m4/(6 sigma^4) - 1/2), axis22: -(m4/(4 sigma^4) - 1/4), cross11: -1, cross21: 0). The box filter is
+# not isotropic at this order (the axis-aligned groups); the real filter is a 27-point quadrature of a linear interpolation, whose m4 is not known: the data give it as a coefficient.
+
+def fourth_order_forms(v, B, spacings, sigma2):
+    """The four groups of fourth-order EMF terms (4-vectors in the static frame, times sigma^4): 'o4_axis31', 'o4_axis22', 'o4_cross11', 'o4_cross21'."""
+    def d(f, *axes):
+        for k in axes:
+            f = np.gradient(f, spacings[k], axis=k + 1)
+        return f
+    s4 = sigma2 ** 2
+    cx = np.cross
+    axis31 = sum(cx(d(v, k, k, k), d(B, k)) + cx(d(v, k), d(B, k, k, k)) for k in range(3))
+    axis22 = sum(cx(d(v, k, k), d(B, k, k)) for k in range(3))
+    pairs = [(0, 1), (0, 2), (1, 2)]
+    cross11 = sum(cx(d(v, k, l), d(B, k, l)) for k, l in pairs)
+    cross21 = sum(cx(d(v, k, k, l), d(B, l)) + cx(d(v, k, l, l), d(B, k)) + cx(d(v, l), d(B, k, k, l)) + cx(d(v, k), d(B, k, l, l)) for k, l in pairs)
+    return {n: spatial4(s4 * x) for n, x in (('o4_axis31', axis31), ('o4_axis22', axis22), ('o4_cross11', cross11), ('o4_cross21', cross21))}
+
+
+def fourth_order_coefficients(sigma2, m4):
+    """The coefficients predicted for E~ = -cov(v~, B~) on the groups of fourth_order_forms (m4: the fourth moment of the filter in the units of length^4, sigma2 = m2)."""
+    return {'o4_axis31': -(m4 / (6 * sigma2 ** 2) - 0.5), 'o4_axis22': -(m4 / (4 * sigma2 ** 2) - 0.25), 'o4_cross11': -1.0, 'o4_cross21': 0.0}
+
+
+# ---- sub-filter stress, Poynting and energy deficits: library --------------------------------------------------------------------------------------------------------
+#
+# The coarse run's momentum, energy and induction sources are -d_j Delta^{ij}, -d_j Delta^{0j}, -curl EMF with (lab frame, flat metric, E_r = -v x B, resolved fields v, B;
+# OhmsRegression.em_flux_deficits for the derivation, to second order in the filter width, O(EMF^2) dropped)
+#   Delta^{ij} = -(E_r^i EMF^j + EMF^i E_r^j) + delta^{ij} E_r.EMF + sigma^2 sum_l [-d_l E^i d_l E^j - d_l B^i d_l B^j + (1/2) delta^{ij} (|d_l E|^2 + |d_l B|^2)],
+#   Delta^{0j} = EMF x B + sigma^2 sum_l d_l E x d_l B,           Delta^{00} = E_r.EMF + (sigma^2/2) sum_l (|d_l E|^2 + |d_l B|^2),
+# with d_l E = a_l + b_l, a_l = -d_l v x B, b_l = -v x d_l B, and EMF = -sigma^2 sum_l d_l v x d_l B. The structure gives pieces with coefficient +1 each ('lin_*',
+# 'quad_*'); the regression is given the pieces separately (the E and B parts of the gradient products, the v-weighted ones) and further gradient forms of the same
+# order, with a coefficient per piece, to see which piece carries the factor (about 2) by which the quadratic part is under-predicted at the closure's own resolution.
+
+DEFICIT_COMPONENTS = {'stress': (slice(0, 6), np.array([1.0, 1.0, 1.0, 2.0, 2.0, 2.0])), 'poynting': (slice(6, 9), np.ones(3)), 'energy': (slice(9, 10), np.ones(1))}
+_IJ = [(0, 0), (1, 1), (2, 2), (0, 1), (0, 2), (1, 2)]
+
+
+def maxwell_deficit_parts(E, B):
+    """The 3+1 electromagnetic stress-energy of the fields E, B: stress T^ij = -E_i E_j - B_i B_j + (1/2) delta (E^2 + B^2), Poynting E x B, energy (E^2 + B^2)/2."""
+    e2b2 = np.sum(E * E, axis=-1) + np.sum(B * B, axis=-1)
+    stress = -E[..., :, None] * E[..., None, :] - B[..., :, None] * B[..., None, :] + 0.5 * np.eye(3) * e2b2[..., None, None]
+    return {'stress': stress, 'poynting': np.cross(E, B), 'energy': 0.5 * e2b2}
+
+
+def pack_deficit(stress, poynting, energy):
+    """(..., 3, 3), (..., 3), (...) -> (..., 10): xx yy zz xy xz yz, Sx Sy Sz, e."""
+    st = np.stack([stress[..., i, j] for i, j in _IJ], axis=-1)
+    return np.concatenate([st, poynting, energy[..., None]], axis=-1)
+
+
+def deficit_library(v, B, spacings, sigma2):
+    """
+    Operators for the deficits Delta^{ij} (6 independent components), Delta^{0j} (3) and Delta^{00}, each a (..., 10) packed array that is zero outside its own class.
+    Returns {class: {name: array}} for class in 'stress', 'poynting', 'energy'. Spatial gradients, lab frame. The coefficient expected for each 'lin_' and 'quad_' piece is +1.
+    """
+    E = -np.cross(v, B)
+    T = [gradient_tensor_k(B, spacings, l) for l in range(3)]            # T[l][..., i] = d_l B_i
+    dv = [gradient_tensor_k(v, spacings, l) for l in range(3)]
+    a = [-np.cross(dv[l], B) for l in range(3)]
+    b = [-np.cross(v, T[l]) for l in range(3)]
+    emf = -sigma2 * sum(np.cross(dv[l], T[l]) for l in range(3))
+    eye = np.eye(3)
+    out3 = lambda x: x[..., None, None] * eye
+
+    def sym_sum(f, g):                                                   # sum_l f_l,i g_l,j  symmetrised
+        return sum(0.5 * (f[l][..., :, None] * g[l][..., None, :] + g[l][..., :, None] * f[l][..., None, :]) for l in range(3))
+
+    def dot_sum(f, g):
+        return sum(np.sum(f[l] * g[l], axis=-1) for l in range(3))
+
+    zero_s, zero_p, zero_e = np.zeros_like(E[..., :, None] * E[..., None, :]), np.zeros_like(E), np.zeros(E.shape[:-1])
+    S = lambda x: pack_deficit(x, zero_p, zero_e)
+    P = lambda x: pack_deficit(zero_s, x, zero_e)
+    N = lambda x: pack_deficit(zero_s, zero_p, x)
+    dE = [a[l] + b[l] for l in range(3)]
+    stress = {
+        'lin_stress': S(-(E[..., :, None] * emf[..., None, :] + emf[..., :, None] * E[..., None, :]) + out3(np.sum(E * emf, axis=-1))),
+        'quad_stress': S(sigma2 * (-sym_sum(dE, dE) - sym_sum(T, T) + 0.5 * out3(dot_sum(dE, dE) + dot_sum(T, T)))),
+        'BB_grad': S(-sigma2 * sym_sum(T, T)), 'BB_trace': S(0.5 * sigma2 * out3(dot_sum(T, T))),
+        'EaEa_grad': S(-sigma2 * sym_sum(a, a)), 'EaEa_trace': S(0.5 * sigma2 * out3(dot_sum(a, a))),
+        'EaEb_grad': S(-2 * sigma2 * sym_sum(a, b)), 'EaEb_trace': S(sigma2 * out3(dot_sum(a, b))),
+        'EbEb_grad': S(-sigma2 * sym_sum(b, b)), 'EbEb_trace': S(0.5 * sigma2 * out3(dot_sum(b, b))),
+    }
+    M = np.stack(T, axis=-2)                                             # M[..., k, l] = d_k B_l
+    J = np.einsum('klj,...lj->...k', EPS3, M)
+    extra = {                                                            # further gradient-squared forms of B (the symmetric forms of two traceless M)
+        'BB_dBi_dBj_t': np.einsum('...il,...jl->...ij', M, M),           # d_i B_l d_j B_l
+        'BB_cross': np.einsum('...li,...jl->...ij', M, M), 'BB_cross2': np.einsum('...il,...lj->...ij', M, M),
+        'BB_trace_MM': out3(np.einsum('...kl,...lk->...', M, M)), 'BB_JJ': J[..., :, None] * J[..., None, :], 'BB_J2': out3(np.sum(J * J, axis=-1)),
+    }
+    for k, x in extra.items():
+        if k in ('BB_cross', 'BB_cross2'):
+            x = 0.5 * (x + np.swapaxes(x, -1, -2))
+        stress[k] = S(sigma2 * x)
+    pb = {'lin_poynting': P(np.cross(emf, B)),
+          'quad_poynting': P(sigma2 * sum(np.cross(dE[l], T[l]) for l in range(3))),
+          'B_dvdB': P(sigma2 * B * dot_sum(dv, T)[..., None]),
+          'dv_BdB': P(sigma2 * sum(dv[l] * np.sum(B * T[l], axis=-1)[..., None] for l in range(3))),
+          'dB_Bdv': P(sigma2 * sum(T[l] * np.sum(B * dv[l], axis=-1)[..., None] for l in range(3))),
+          'v_dBdB': P(sigma2 * v * dot_sum(T, T)[..., None]),
+          'dB_vdB': P(sigma2 * sum(T[l] * np.sum(v * T[l], axis=-1)[..., None] for l in range(3)))}
+    en = {'lin_energy': N(np.sum(E * emf, axis=-1)),
+          'quad_energy': N(0.5 * sigma2 * (dot_sum(dE, dE) + dot_sum(T, T))),
+          'BB_energy': N(0.5 * sigma2 * dot_sum(T, T)), 'EaEa_energy': N(0.5 * sigma2 * dot_sum(a, a)),
+          'EaEb_energy': N(sigma2 * dot_sum(a, b)), 'EbEb_energy': N(0.5 * sigma2 * dot_sum(b, b)),
+          'BB_MM_energy': N(sigma2 * np.einsum('...kl,...lk->...', M, M)), 'BB_J2_energy': N(sigma2 * np.sum(J * J, axis=-1))}
+    return {'stress': stress, 'poynting': pb, 'energy': en}
+
+
+def gradient_tensor_k(f, spacings, l):
+    """d_l f for f of shape (Nt, Nx, Ny, Nz, ...) along the spatial axis l."""
+    return np.gradient(f, spacings[l], axis=l + 1)
+
+
+def gram_system_k(ops, y, names, comps, weights):
+    """Gram system over the components `comps` (a slice of the packed last axis) with weights per component (Euclidean, not Minkowski)."""
+    O = [np.asarray(ops[n], dtype=float)[..., comps].reshape(-1, len(weights)) for n in names]
+    y = np.asarray(y, dtype=float)[..., comps].reshape(-1, len(weights))
+    G = np.array([[np.sum(weights * a * b) for b in O] for a in O])
+    r = np.array([np.sum(weights * a * y) for a in O])
+    return G, r, float(np.sum(weights * y * y))
+
+
 # ---- windows and the Gram system ---------------------------------------------------------------------------------------------------------------------------------------
 
 def _test_function(shape, kind):
@@ -290,7 +424,7 @@ def box_average(f, w):
     return out
 
 
-def synthetic_meso(n_fine=48, width=4, stride=2, seed=0, kmax=3, vamp=0.3, compressible=True, density_amp=0.2):
+def synthetic_meso(n_fine=48, width=4, stride=2, seed=0, kmax=3, vamp=0.3, compressible=True, density_amp=0.2, deficits=False):
     """
     A fine periodic grid with smooth random v (|v| ~ vamp), solenoidal B = curl A and density D; box-averaged over `width` fine cells and sampled every `stride` cells.
     Returns a dict with the meso fields {'v', 'B', 'D'} (each with a leading time axis of length 1: shape (1, N, N, N, ...)), the meso spacing, sigma^2 of the discrete box
@@ -321,5 +455,11 @@ def synthetic_meso(n_fine=48, width=4, stride=2, seed=0, kmax=3, vamp=0.3, compr
     vf = Dv / Dm[..., None]                                 # Favre velocity
     E_favre = -avg(np.cross(v, B)) + np.cross(vf, Bm)       # the filtered E minus the ideal field of the Favre velocity: -<dv x dB> - (<v> - vf) x <B>
     cell = lambda f: f[sub][None]
-    return {'v': cell(vf), 'B': cell(Bm), 'D': cell(Dm), 'v_plain': cell(vm), 'E_exact': cell(E_exact), 'E_favre': cell(E_favre),
+    extra = {}
+    if deficits:                                           # exact Delta = <T(E, B)> - T(E_r, B~) with E_r = -<v> x <B>
+        Tf = maxwell_deficit_parts(-np.cross(v, B), B)
+        Tr = maxwell_deficit_parts(-np.cross(vm, Bm), Bm)
+        avgk = lambda x: avg(x.reshape(x.shape[:3] + (-1,))).reshape(x.shape)
+        extra['deficit'] = cell(pack_deficit(avgk(Tf['stress']) - Tr['stress'], avgk(Tf['poynting']) - Tr['poynting'], avg(Tf['energy'][..., None])[..., 0] - Tr['energy']))
+    return {**extra, 'v': cell(vf), 'B': cell(Bm), 'D': cell(Dm), 'v_plain': cell(vm), 'E_exact': cell(E_exact), 'E_favre': cell(E_favre),
             'spacing': (stride * h,) * 3, 'sigma2': (width ** 2 - 1) / 12.0 * h * h}
