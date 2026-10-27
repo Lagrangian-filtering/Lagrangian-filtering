@@ -66,6 +66,24 @@ class TestMakeMhdConfig(unittest.TestCase):
             self.assertAlmostEqual(rng_[1], (12 + n_crop - 1 - 4) * DX, places=4)
         self.assertTrue(os.path.exists(os.path.join(self.tmp, "submit_t.sh")))
 
+    def test_relative_directory_is_written_as_absolute_path(self):
+        """The job runs in filter_scripts, so a relative hdf5_dir (and the default pickled dir) must not reach the config."""
+        cwd = os.getcwd()
+        try:
+            os.chdir(self.tmp)
+            sys.argv = ["make_mhd_config.py", "run", "--name", "rel", "--outdir", self.tmp, "--crop-size", "16", "16", "12", "--filter-width", "2",
+                        "--box-len", "3", "--num-t-slices", "3", "--coarse", "2"]
+            with contextlib.redirect_stdout(io.StringIO()):
+                runpy.run_path(SCRIPT, run_name="__main__")
+        finally:
+            os.chdir(cwd)
+        with open(os.path.join(self.tmp, "config_rel.txt")) as f:
+            text = f.read()
+        dirs = dict(re.findall(r"^(hdf5_dir|pickled_files_dir) = (.*)$", text, re.M))
+        self.assertTrue(os.path.isabs(dirs["hdf5_dir"]), dirs)
+        self.assertTrue(os.path.isabs(dirs["pickled_files_dir"]), dirs)
+        self.assertEqual(os.path.realpath(dirs["hdf5_dir"]), os.path.realpath(self.run))
+
     def test_window_check_refuses_too_wide_a_filter(self):
         with self.assertRaises(SystemExit) as cm:
             self.call("--crop-size", "36", "36", "30", "--filter-width", "14", "--box-len", "14")
