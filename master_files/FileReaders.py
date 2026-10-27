@@ -232,7 +232,17 @@ class METHOD_HDF5(object):
         micro_model.domain_vars['points'] = [micro_model.domain_vars['t'], micro_model.domain_vars['x'], \
                                              micro_model.domain_vars['y']]
 
-    def read_in_data3D(self, micro_model, crop=None, stride=1):   
+    @staticmethod
+    def _derive_auxiliary(micro_model, gamma, names):
+        """W, e, h of an ideal gas from the primitive variables n, vx, vy, vz, p (the definitions METHOD uses; checked against its Auxiliary output)."""
+        pv = micro_model.prim_vars
+        v2 = pv['vx'] ** 2 + pv['vy'] ** 2 + pv['vz'] ** 2
+        e = pv['p'] / (pv['n'] * (gamma - 1.0))
+        derived = {'W': 1.0 / np.sqrt(1.0 - v2), 'e': e, 'h': 1.0 + e + pv['p'] / pv['n']}
+        for k in names:
+            micro_model.aux_vars[k] = derived[k]
+
+    def read_in_data3D(self, micro_model, crop=None, stride=1, adiabatic_index=None):   
         """
         Store 3+1 dimensional data from files into micro_model
 
@@ -252,6 +262,11 @@ class METHOD_HDF5(object):
         stride: int
             keep every stride-th cell along each axis (after cropping).
             dx, dy, dz are multiplied by stride; dt is unchanged.
+
+        adiabatic_index: None or float
+            Gamma of the ideal-gas equation of state. Needed only when the files lack the Auxiliary group (METHOD's OUTPUT_MINIMAL frames, written by the
+            ClosureScan example, hold the primitive variables only): W = 1/sqrt(1 - v^2), e = p/(n (Gamma - 1)) and h = 1 + e + p/n are then computed from
+            the primitives. Raises ValueError if Auxiliary variables are missing and no index is given.
 
         Notes 
         -----
@@ -308,7 +323,14 @@ class METHOD_HDF5(object):
                 micro_model.aux_vars[aux_var_str] = np.array(micro_model.aux_vars[aux_var_str])
             except KeyError:
                 print(f'{method_str} is not in the hdf5 dataset: check Auxiliary/')
- 
+
+        missing = [k for k in ('W', 'h', 'e') if k in micro_model.aux_vars and isinstance(micro_model.aux_vars[k], list)]
+        if missing:
+            if adiabatic_index is None:
+                raise ValueError(f'the files have no Auxiliary variables {missing} (frames written with OUTPUT_MINIMAL): pass adiabatic_index to derive them from the primitives')
+            print(f'Auxiliary variables {missing} derived from the primitives (adiabatic index {adiabatic_index})')
+            self._derive_auxiliary(micro_model, float(adiabatic_index), missing)
+
         # As METHOD saves endTime, the time variables (and points) need to be dealt with separately
         for dom_var_str in micro_model.domain_int_strs: 
             try: 

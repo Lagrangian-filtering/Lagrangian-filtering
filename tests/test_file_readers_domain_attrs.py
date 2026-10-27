@@ -82,6 +82,45 @@ class TestReadInData3DDomainAttrs(unittest.TestCase):
         with self.assertRaises(ValueError):
             reader.read_in_data3D(IdealHD_3D(), crop=((1, 1), (None, None), (None, None)))
 
+    def _minimal_dir(self):
+        """Frames as METHOD's OUTPUT_MINIMAL writes them: primitive variables only (smooth subluminal fields), no Auxiliary group."""
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        rng = np.random.default_rng(0)
+        shape = (3, 3, 3)
+        for n, t in enumerate((0.0, 1.0)):
+            path = os.path.join(tmp, 'frame%d.hdf5' % n)
+            self._write_fake_file(path, t=t, shape=shape)
+            with h5py.File(path, 'a') as f:
+                del f['Auxiliary']
+                prim = f['Primitive']
+                for name, val in (('rho', 1.0 + rng.random(shape)), ('p', 0.5 + rng.random(shape)), ('vx', 0.3 * rng.random(shape)),
+                                  ('vy', -0.3 * rng.random(shape)), ('vz', 0.2 * rng.random(shape))):
+                    del prim[name]
+                    prim.create_dataset(name, data=val)
+        return os.path.join(tmp, '')
+
+    def test_missing_auxiliary_is_derived_from_primitives(self):
+        d, gamma = self._minimal_dir(), 4.0 / 3.0
+        m = IdealHD_3D()
+        METHOD_HDF5(d).read_in_data3D(m, adiabatic_index=gamma)
+        pv = m.prim_vars
+        W = 1.0 / np.sqrt(1.0 - pv['vx'] ** 2 - pv['vy'] ** 2 - pv['vz'] ** 2)
+        e = pv['p'] / (pv['n'] * (gamma - 1.0))
+        np.testing.assert_allclose(m.aux_vars['W'], W)
+        np.testing.assert_allclose(m.aux_vars['e'], e)
+        np.testing.assert_allclose(m.aux_vars['h'], 1.0 + e + pv['p'] / pv['n'])
+        self.assertEqual(m.aux_vars['W'].shape, pv['n'].shape)
+
+    def test_missing_auxiliary_without_adiabatic_index_raises(self):
+        with self.assertRaises(ValueError):
+            METHOD_HDF5(self._minimal_dir()).read_in_data3D(IdealHD_3D())
+
+    def test_present_auxiliary_is_not_overwritten(self):
+        m = IdealHD_3D()
+        METHOD_HDF5(os.path.join(self.tmpdir, '')).read_in_data3D(m, adiabatic_index=1.4)
+        np.testing.assert_array_equal(m.aux_vars['W'], np.ones((2, 2, 2, 2)))
+
 
 if __name__ == '__main__':
     unittest.main()

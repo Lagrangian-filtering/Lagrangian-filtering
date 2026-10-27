@@ -2,6 +2,7 @@ import sys
 sys.path.append('../master_files/')
 import configparser
 import json
+import os
 import pickle
 import time
 
@@ -24,6 +25,7 @@ if __name__ == '__main__':
     config.read(sys.argv[1])
 
     hdf5_directory = config['Directories']['hdf5_dir']
+    os.makedirs(config['Directories']['pickled_files_dir'], exist_ok=True)       # at the start: a missing directory must not cost the whole run at the final save
     print('=========================================================================')
     print(f'Starting MHD filtering job on data from {hdf5_directory}')
     print('=========================================================================\n\n')
@@ -38,7 +40,8 @@ if __name__ == '__main__':
     crop = read_region.get('crop')
     FileReader.read_in_data3D(micro_model,
                               crop=tuple(tuple(r) for r in crop) if crop else None,
-                              stride=int(read_region.get('stride', 1)))
+                              stride=int(read_region.get('stride', 1)),
+                              adiabatic_index=float(config['Micro_model_settings']['adiabatic_index']) if config.has_option('Micro_model_settings', 'adiabatic_index') else None)
     micro_model.setup_structures()
     print('Finished reading micro data from hdf5, structures also set up.', flush=True)
     print('Micro-model times: {}'.format(micro_model.domain_vars['t']))

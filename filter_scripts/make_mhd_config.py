@@ -54,6 +54,8 @@ def main():
     p.add_argument("--pad-cells", type=int, default=0,
                    help="minimum margin (cells) between the crop faces and the meso grid; use the same "
                         "value for every run of a filter-width scan so the meso grids are identical")
+    p.add_argument("--adiabatic-index", type=float, default=4.0 / 3.0,
+                   help="Gamma of the equation of state (METHOD's ClosureScan uses 4/3); used only if the snapshots have no Auxiliary group (OUTPUT_MINIMAL frames)")
     p.add_argument("--n-cpus", type=int, default=16)
     p.add_argument("--partition", default="batch")
     p.add_argument("--pickled-dir", default=None, help="default: <hdf5_dir>/pickled")
@@ -154,6 +156,7 @@ micro_pickled_filename = /
 [Micro_model_settings]
 snapshots_opts = {"fewer_snaps_required": false, "smaller_list": []}
 read_region = %s
+adiabatic_index = %r
 
 [Meso_model_settings]
 meso_grid_smart = %s
@@ -164,7 +167,7 @@ n_cpus = %d
 terms = {"resistive": true, "dynamo": true, "hall": true}
 """ % (a.name, n, spacing.mean() / dx, W, L, size, start, "config_%s.txt" % a.name,
        hdf5_dir, pickled, a.name,
-       json.dumps({"crop": [[s0, s0 + sz] for s0, sz in zip(start, size)], "stride": 1}),
+       json.dumps({"crop": [[s0, s0 + sz] for s0, sz in zip(start, size)], "stride": 1}), a.adiabatic_index,
        json.dumps({"x_range": ranges[0], "y_range": ranges[1], "z_range": ranges[2],
                    "num_T_slices": a.num_t_slices, "coarse_grain_factor": a.coarse}),
        json.dumps({"box_len_ratio": L, "filter_width_ratio": W}), a.n_cpus)

@@ -86,12 +86,16 @@ def analyse(path, a):
     for label, ops in variants.items():
         ops = {k: x[sl] for k, x in ops.items()}
         fit = OR.fit_region(E, ops, names)
-        null = OR.shift_null(E, ops, names, n_perm=a.n_null, min_shift=3)
+        try:
+            null = OR.shift_null(E, ops, names, n_perm=a.n_null, min_shift=3)
+        except ValueError as err:                                  # a meso grid too small to shift by 3 cells: no null
+            print("  (%s: no shift null: %s)" % (label, err))
+            null = np.array([np.nan])
         tiles = OR.tile_fits(E, ops, names, tuple(a.block), min_points=a.min_points)
         single = {n: OR.fit_region(E, ops, (n,)) for n in names}
         size = {n: float(np.sqrt(OR.mink_dot(ops[n], ops[n]).sum() / OR.mink_dot(E, E).sum())) for n in names}
         out['variants'][label] = {
-            'R2': fit['R2'], 'null95': float(np.percentile(null, 95)), 'coef': {n: fit[n] for n in names},
+            'R2': fit['R2'], 'null95': float(np.nanpercentile(null, 95)) if np.isfinite(null).any() else float('nan'), 'coef': {n: fit[n] for n in names},
             'R2_single': {n: single[n]['R2'] for n in names}, 'coef_single': {n: single[n][n] for n in names}, 'size': size,
             'tiles': {n: OR.summarize([t[n] for t in tiles]) for n in names} if tiles else None, 'n_tiles': len(tiles)}
     out['n_points'] = int(np.prod(E.shape[:4]))
