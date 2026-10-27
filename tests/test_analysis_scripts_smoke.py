@@ -140,6 +140,18 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
         self.assertEqual(list(d['pieces']), ['ss', 'tt', 'ts', 'vv'])      # 3 slices: all four pieces
         self.assertEqual(d['vB_joint_coeffs'].shape, (4,))
 
+    def test_regress_covariant_emf_two_pickles(self):
+        out = os.path.join(self.tmp, 'covemf')
+        a, b = self.write_pickle('a.pickle', seed=0), self.write_pickle('b.pickle', seed=1)
+        self.run_script('regress_covariant_emf.py', a, b, '--labels', 'one', 'two', '--block', '6', '6', '3',
+                        '--min-points', '20', '--n-null', '3', '--outdir', out)
+        with np.load(os.path.join(out, 'covariant_emf.npz')) as _z:
+            d = {k: _z[k] for k in _z.files}
+        self.assertEqual(list(d['labels']), ['one', 'two'])
+        for v in ('cov', 'cov_spatial', 'lab3'):
+            self.assertEqual(d[v + '_R2'].shape, (2,))
+            self.assertTrue(np.all(np.isfinite(d[v + '_coef_vB'])))
+
     def test_regress_stress_model(self):
         out = os.path.join(self.tmp, 'stress')
         path = os.path.join(self.tmp, 's.pickle')
