@@ -20,7 +20,6 @@ bound is gamma * sqrt(3) * v.) Samples outside the snapshot window crash interpn
 All widths below are in units of the micro grid spacing dx.
 """
 import argparse
-import glob
 import json
 import math
 import os
@@ -28,6 +27,9 @@ import sys
 
 import h5py
 import numpy as np
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'master_files'))
+from SnapshotOrder import snapshot_files
 
 # Measured once: 12.3 GB peak for 10 snapshots x 64*64*32 cells at 16 processes.
 BYTES_PER_CELL_SNAPSHOT = 9.4e3
@@ -60,7 +62,7 @@ def main():
     a = p.parse_args()
 
     hdf5_dir = os.path.join(a.hdf5_dir, "")
-    files = sorted(glob.glob(hdf5_dir + "*.hdf5"))
+    files = snapshot_files(hdf5_dir)
     if len(files) < 3:
         sys.exit("Need at least 3 snapshots in %s (found %d)" % (hdf5_dir, len(files)))
 

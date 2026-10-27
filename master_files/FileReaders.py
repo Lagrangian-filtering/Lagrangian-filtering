@@ -9,6 +9,8 @@ import h5py
 import glob
 import numpy as np
 
+from SnapshotOrder import snapshot_files
+
 class METHOD_HDF5(object):
 
     def __init__(self, directory, fewer_snaps=False, smaller_list=None):
@@ -20,16 +22,16 @@ class METHOD_HDF5(object):
         Parameters
         ----------
         directory: string 
-            the filenames in the directory have to be incremental (sorted is used)
+            the snapshots are used in the order of their stored times (SnapshotOrder.snapshot_files; the file names need not sort in time order)
 
         fewer_snaps: bool
             set to true if you want to store fewer snapshots than found in directory 
         
         smaller_list: list
-            indices to be retained of list orderd via sorted(glob.glob(directory+str('*.hdf5')))
+            indices to be retained of the list ordered by time (SnapshotOrder.snapshot_files)
 
         """ 
-        hdf5_filenames = sorted(glob.glob(directory+str('*.hdf5')))
+        hdf5_filenames = snapshot_files(directory)
         if fewer_snaps:
             if smaller_list:
                 temp = [hdf5_filenames[i] for i in smaller_list]
