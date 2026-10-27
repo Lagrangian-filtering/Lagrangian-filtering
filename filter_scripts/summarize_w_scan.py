@@ -6,10 +6,16 @@ import sys
 
 import numpy as np
 
+def _label(path):
+    with np.load(path) as z:
+        return float(z["label"])
+
+
 root = sys.argv[1] if len(sys.argv) > 1 else "scan_results"
 rows = []
 for f in glob.glob(os.path.join(root, "w*", "ohms_regression.npz")):
-    d = np.load(f)
+    with np.load(f) as _z:
+        d = {k: _z[k] for k in _z.files}
     subs = list(d["subsets"])
     iR, iF = subs.index("R"), subs.index("R+alpha+gamma")
     R2, sh, c = d["global_R2"], d["shift_null_R2"], d["global_coeffs"]
@@ -25,9 +31,10 @@ for r in sorted(rows):
     print("%5g | %7.3f %8.3f %12.3g | %11.3g [%9.3g, %9.3g] %2d | %7.3f %7.3f | %6.3f %6.3f" % r)
 print("\nHALL-ONLY fit (gamma): is it a stable constant?")
 print("%5s | %12s | %11s [%9s, %9s] | %s" % ("W/dx", "global gamma", "tile median", "p16", "p84", "tiles with gamma > 0"))
-for f in sorted(glob.glob(os.path.join(root, "w*", "ohms_regression.npz")), key=lambda x: float(np.load(x)["label"])):
-    d = np.load(f)
-    if "gamma_only_tile_gamma" not in d.files:
+for f in sorted(glob.glob(os.path.join(root, "w*", "ohms_regression.npz")), key=lambda x: _label(x)):
+    with np.load(f) as _z:
+        d = {k: _z[k] for k in _z.files}
+    if "gamma_only_tile_gamma" not in d:
         print("%5g | (re-run regress_ohms_law.py: this npz predates the gamma columns)" % float(d["label"]))
         continue
     g = d["gamma_only_tile_gamma"]

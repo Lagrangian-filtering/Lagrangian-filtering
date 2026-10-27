@@ -236,7 +236,8 @@ class TestScript(unittest.TestCase):
             out = subprocess.run([sys.executable, script, '--synthetic', '--n-fine', '32', '--n-boot', '10', '--n-null', '5', '--stride', '1', '3', '3', '1', '--outdir', d],
                                  capture_output=True, text=True, check=True).stdout
             self.assertIn('SELECTION at threshold 0.05: dv_x_dB, model_dens', out)
-            z = np.load(os.path.join(d, 'sparse_library.npz'))
+            with np.load(os.path.join(d, 'sparse_library.npz')) as _z:
+                z = {k: _z[k] for k in _z.files}
             j = list(z['names']).index('dv_x_dB')
             self.assertAlmostEqual(float(z['path_coef'][2][j]), -1.0, delta=0.1)
 

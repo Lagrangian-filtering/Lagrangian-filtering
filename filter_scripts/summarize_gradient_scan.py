@@ -12,8 +12,9 @@ if not files:
     sys.exit("no results under %s" % root)
 rows = []
 for f in files:
-    d = np.load(f)
-    if "fit_names" not in d.files:
+    with np.load(f) as _z:
+        d = {k: _z[k] for k in _z.files}
+    if "fit_names" not in d:
         print("%s predates the scan columns: re-run regress_gradient_model.py with --label" % f)
         continue
     names = list(d["fit_names"])

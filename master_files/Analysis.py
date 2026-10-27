@@ -1256,7 +1256,7 @@ class FourierAnalysis(object):
         plt.ylabel(r"$k|P_{T}(k)|^2$", {'fontsize':'large'})
         plt.xlabel(r'$k$')
 
-        """
+        r"""
         # Setup plotting for x AND y plotted - subplots
         fig, axs = plt.subplots(1, 2, sharey=True, dpi=1200)
         fig.set_size_inches(8,4)

@@ -55,7 +55,8 @@ class TestMakeMhdConfig(unittest.TestCase):
         out = self.call("--crop-size", "16", "16", "12", "--filter-width", "2", "--box-len", "3",
                         "--num-t-slices", "3", "--coarse", "2")
         self.assertIn("window span", out)
-        text = open(os.path.join(self.tmp, "config_t.txt")).read()
+        with open(os.path.join(self.tmp, "config_t.txt")) as f:
+            text = f.read()
         opts = json.loads(re.search(r"^meso_grid_smart = (.*)$", text, re.M).group(1))
         self.assertEqual(opts["num_T_slices"], 3)
         self.assertEqual(opts["coarse_grain_factor"], 2)

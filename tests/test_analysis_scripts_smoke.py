@@ -111,7 +111,8 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
         self.run_script('plot_ohms_winner.py', self.write_pickle('a.pickle'), '--window', '5', '5', '3',
                         '--n-null', '3', '--outdir', out)
         self.assertTrue(os.path.exists(os.path.join(out, 'ohms_winner.png')))
-        self.assertTrue(np.all(np.load(os.path.join(out, 'ohms_winner_maps.npz'))['B2_sub'] >= 0))
+        with np.load(os.path.join(out, 'ohms_winner_maps.npz')) as m:
+            self.assertTrue(np.all(m['B2_sub'] >= 0))
 
     def test_mosaic_of_two_abutting_tiles(self):
         out = os.path.join(self.tmp, 'mos')
@@ -119,7 +120,8 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
         self.write_pickle('t2.pickle', x0=0.40 + 14 * 0.01, seed=2)      # abuts the first in x
         self.run_script('mosaic_ohms_winner.py', os.path.join(self.tmp, 't*.pickle'), '--window', '5', '5', '3',
                         '--n-null', '3', '--outdir', out)
-        d = np.load(os.path.join(out, 'mosaic_maps.npz'))
+        with np.load(os.path.join(out, 'mosaic_maps.npz')) as _z:
+            d = {k: _z[k] for k in _z.files}
         self.assertEqual(d['winner'].shape[0], 28)
         self.assertTrue(bool(d['present'].all()))
 
@@ -133,7 +135,8 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
         out = os.path.join(self.tmp, 'split')
         self.run_script('regress_covariance_split.py', self.write_pickle('a.pickle'), '--block', '6', '6', '3',
                         '--min-points', '20', '--n-null', '3', '--outdir', out)
-        d = np.load(os.path.join(out, 'covariance_split.npz'))
+        with np.load(os.path.join(out, 'covariance_split.npz')) as _z:
+            d = {k: _z[k] for k in _z.files}
         self.assertEqual(list(d['pieces']), ['ss', 'tt', 'ts', 'vv'])      # 3 slices: all four pieces
         self.assertEqual(d['vB_joint_coeffs'].shape, (4,))
 
@@ -146,7 +149,8 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
             pickle.dump(m, fh)
         self.run_script('regress_stress_model.py', path, '--block', '6', '6', '3',
                         '--min-points', '20', '--n-null', '3', '--outdir', out)
-        d = np.load(os.path.join(out, 'stress_model.npz'))
+        with np.load(os.path.join(out, 'stress_model.npz')) as _z:
+            d = {k: _z[k] for k in _z.files}
         self.assertEqual(d['q_coeffs'].shape, (2,))
         self.assertEqual(d['pi_coeffs'].shape, (1,))
 
@@ -162,7 +166,8 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
             pickle.dump(m, fh)
         self.run_script('regress_lorentz_closure.py', path, '--block', '6', '6', '3',
                         '--min-points', '20', '--n-null', '3', '--outdir', out)
-        d = np.load(os.path.join(out, 'lorentz_closure.npz'))
+        with np.load(os.path.join(out, 'lorentz_closure.npz')) as _z:
+            d = {k: _z[k] for k in _z.files}
         self.assertEqual(d['lorentz_coeffs'].shape, (2,))
 
     def test_compare_force_scales(self):
@@ -177,7 +182,8 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
         with open(path, 'wb') as fh:
             pickle.dump(m, fh)
         self.run_script('compare_force_scales.py', path, '--outdir', out)
-        d = np.load(os.path.join(out, 'force_scales.npz'))
+        with np.load(os.path.join(out, 'force_scales.npz')) as _z:
+            d = {k: _z[k] for k in _z.files}
         self.assertEqual(d['div_T'].shape, d['F_closure'].shape)
 
     def test_map_closure_tail(self):
@@ -192,7 +198,8 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
             pickle.dump(m, fh)
         self.run_script('map_closure_tail.py', path, '--threshold', '0.05', '--outdir', out)
         self.assertTrue(os.path.exists(os.path.join(out, 'closure_tail.png')))
-        d = np.load(os.path.join(out, 'closure_tail.npz'))
+        with np.load(os.path.join(out, 'closure_tail.npz')) as _z:
+            d = {k: _z[k] for k in _z.files}
         self.assertEqual(d['rank_corr'].shape, d['median_tail'].shape)
 
     def test_check_backscatter(self):
@@ -207,7 +214,8 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
         with open(path, 'wb') as fh:
             pickle.dump(m, fh)
         self.run_script('check_backscatter.py', path, '--threshold', '0.05', '--outdir', out)
-        d = np.load(os.path.join(out, 'backscatter.npz'))
+        with np.load(os.path.join(out, 'backscatter.npz')) as _z:
+            d = {k: _z[k] for k in _z.files}
         self.assertEqual(d['values'].shape[1], 4)
 
     def test_regress_em_deficits(self):
@@ -220,7 +228,8 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
         with open(path, 'wb') as fh:
             pickle.dump(m, fh)
         self.run_script('regress_em_deficits.py', path, '--block', '6', '6', '3', '--min-points', '20', '--n-null', '3', '--outdir', out)
-        d = np.load(os.path.join(out, 'em_deficits.npz'))
+        with np.load(os.path.join(out, 'em_deficits.npz')) as _z:
+            d = {k: _z[k] for k in _z.files}
         self.assertEqual(d['sources'].shape[1], 2)
 
     def test_regress_em_deficits_refuses_old_pickle(self):
@@ -268,9 +277,10 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
             self.run_script('regress_gradient_model.py', self.write_pickle('p%s.pickle' % w, seed=seed),
                             '--block', '6', '6', '3', '--min-points', '20', '--n-null', '3', '--label', w,
                             '--outdir', os.path.join(root, 'w' + w))
-        d = np.load(os.path.join(root, 'w4', 'gradient_model.npz'))
+        with np.load(os.path.join(root, 'w4', 'gradient_model.npz')) as _z:
+            d = {k: _z[k] for k in _z.files}
         for key in ('fit_names', 'fit_R2', 'fit_null95', 'model_vB_coeff', 'joint_dens_coeff', 'pred_null95', 'best_scale'):
-            self.assertIn(key, d.files)
+            self.assertIn(key, d)
         self.assertEqual(str(d['label']), '4')
         sys.argv = ['summarize_gradient_scan.py', root]
         runpy.run_path(os.path.join(SCRIPTS, 'summarize_gradient_scan.py'), run_name='__main__')
