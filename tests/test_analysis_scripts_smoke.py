@@ -152,6 +152,21 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
             self.assertEqual(d[v + '_R2'].shape, (2,))
             self.assertTrue(np.all(np.isfinite(d[v + '_coef_vB'])))
 
+    def test_regress_covariant_emf_common_region(self):
+        out = os.path.join(self.tmp, 'covemf_common')
+        a, b = self.write_pickle('a.pickle', seed=0, x0=0.4), self.write_pickle('b.pickle', seed=1, x0=0.43)
+        args = ('--labels', 'one', 'two', '--block', '6', '6', '3', '--min-points', '20', '--n-null', '3', '--outdir', out)
+        self.run_script('regress_covariant_emf.py', a, b, *args)
+        with np.load(os.path.join(out, 'covariant_emf.npz')) as _z:
+            self.assertEqual(list(_z['n_points']), [12 * 12 * 6] * 2)             # the whole trimmed box without the option
+        self.run_script('regress_covariant_emf.py', a, b, '--common-region', *args)
+        with np.load(os.path.join(out, 'covariant_emf.npz')) as _z:
+            self.assertEqual(list(_z['n_points']), [9 * 12 * 6] * 2)              # x overlap: 9 of the 12 cells, same for both
+            self.assertTrue(np.all(np.isfinite(_z['cov_coef_vB'])))
+        c = self.write_pickle('c.pickle', seed=2, x0=0.435)                       # half-cell offset: cells do not coincide
+        with self.assertRaises(SystemExit):
+            self.run_script('regress_covariant_emf.py', a, c, '--common-region', *args)
+
     def test_regress_stress_model(self):
         out = os.path.join(self.tmp, 'stress')
         path = os.path.join(self.tmp, 's.pickle')

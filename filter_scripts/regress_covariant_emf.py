@@ -12,10 +12,11 @@ flow, so its coefficients should be the same in every frame. Fitted: the target 
 For comparison the lab-frame 3-vector model of regress_gradient_model.py ('lab3': v = u~^i/u~^0, B in the analysis frame; its expected coefficients are -1 and +1) is fitted on the same
 points; it equals the covariant one to O(v^2) and departs from it at relativistic speeds. The spatial-only variants (d_t = 0) show what the time slices contribute.
 
-    python regress_covariant_emf.py P1.pickle [P2.pickle ...] [--labels beta0 beta0.5 ...] [--block 12 12 6] [--sigma2-factor 1.12]
+    python regress_covariant_emf.py P1.pickle [P2.pickle ...] [--labels beta0 beta0.5 ...] [--block 12 12 6] [--sigma2-factor 1.12] [--common-region]
 
 Uses the central time slice (three slices are needed for the time derivative; with fewer the time derivative is zero and the variant 'cov' is the spatial-only one) and drops one cell at the
-spatial edges. Prints one block per pickle and a summary table of the joint coefficients; writes covariant_emf.npz. Does not modify the pickles.
+spatial edges. With --common-region every pickle is fitted on the same physical box (the intersection of the meso boxes, after the edge drop; the cells must coincide
+between the pickles, i.e. the same spacing and offsets that are whole cells), so that the coefficients are not affected by the region. Prints one block per pickle and a summary table of the joint coefficients; writes covariant_emf.npz. Does not modify the pickles.
 """
 import argparse
 import os
@@ -74,12 +75,45 @@ def central(shape):
     return (t_sl,) + tuple(slice(1, -1) if k >= 3 else slice(None) for k in shape[1:4])
 
 
-def analyse(path, a):
+def trimmed_axes(m):
+    """The meso coordinates X, Y, Z of the cells kept by central() (one cell dropped at each end)."""
+    return [np.asarray(m.domain_vars[k], dtype=float)[1:-1] for k in ('X', 'Y', 'Z')]
+
+
+def read_axes(path):
+    with open(path, 'rb') as fh:
+        return trimmed_axes(pickle.load(fh))
+
+
+def common_box(all_axes):
+    """The physical box [lo, hi] per direction common to the meso boxes of all the pickles."""
+    lo = [max(ax[d][0] for ax in all_axes) for d in range(3)]
+    hi = [min(ax[d][-1] for ax in all_axes) for d in range(3)]
+    return lo, hi
+
+
+def box_slices(axes, box):
+    """Index ranges (into the trimmed axes) of the cells inside the box, per direction."""
+    lo, hi = box
+    out = []
+    for d, ax in enumerate(axes):
+        tol = 1e-3 * abs(ax[1] - ax[0])
+        idx = np.nonzero((ax >= lo[d] - tol) & (ax <= hi[d] + tol))[0]
+        if idx.size == 0:
+            raise SystemExit("the meso boxes of the pickles do not overlap in direction %d" % d)
+        out.append(slice(int(idx[0]), int(idx[-1]) + 1))
+    return out
+
+
+def analyse(path, a, box=None):
     with open(path, 'rb') as fh:
         m = pickle.load(fh)
     sigma2 = a.sigma2_factor * float(m.filter.filter_width) ** 2 / 12.0
     variants, target, info = operators(m, sigma2)
     sl = central(target.shape[:4])
+    if box is not None:
+        axes = trimmed_axes(m)
+        sl = (sl[0],) + tuple(slice(1 + r.start, 1 + r.stop) for r in box_slices(axes, box))
     E = target[sl]
     out = {'info': info, 'sigma2': sigma2, 'variants': {}}
     names = ('vB', 'dens')
@@ -99,14 +133,15 @@ def analyse(path, a):
             'R2_single': {n: single[n]['R2'] for n in names}, 'coef_single': {n: single[n][n] for n in names}, 'size': size,
             'tiles': {n: OR.summarize([t[n] for t in tiles]) for n in names} if tiles else None, 'n_tiles': len(tiles)}
     out['n_points'] = int(np.prod(E.shape[:4]))
+    out['shape'] = tuple(E.shape[1:4])
     return out
 
 
 def report(label, res):
     i = res['info']
     print("=" * 100)
-    print("%s: %d meso slices, spacing %.4g, dt %.4g, gamma max %.3f (median %.3f), sigma^2 %.3g, %d points" % (
-        label, i['n_slices'], i['spacing'], i['dt'], i['gamma_max'], i['gamma_median'], res['sigma2'], res['n_points']))
+    print("%s: %d meso slices, spacing %.4g, dt %.4g, gamma max %.3f (median %.3f), sigma^2 %.3g, %d points (%s cells)" % (
+        label, i['n_slices'], i['spacing'], i['dt'], i['gamma_max'], i['gamma_median'], res['sigma2'], res['n_points'], 'x'.join(str(k) for k in res['shape'])))
     print("  pickled E_tilde against F~ u~: relative mismatch %.2e (should be ~0)" % i['E_pickled_mismatch'])
     print("  %-12s %7s %9s | %-26s | %-30s | %-30s" % ("variant", "R2", "(null95)", "joint coefficients vB, dens", "vB alone: R2, coefficient", "tiles: vB median [p16, p84]"))
     for name, r in res['variants'].items():
@@ -125,15 +160,28 @@ def main():
     p.add_argument("--min-points", type=int, default=100)
     p.add_argument("--n-null", type=int, default=30)
     p.add_argument("--sigma2-factor", type=float, default=1.0, help="multiply the nominal sigma^2 = W^2/12 (see regress_gradient_model.py)")
+    p.add_argument("--common-region", action="store_true", help="fit every pickle on the physical box common to all of them (their meso boxes differ with the run)")
     p.add_argument("--outdir", default=".")
     a = p.parse_args()
     labels = a.labels or [os.path.basename(f) for f in a.pickle_files]
     if len(labels) != len(a.pickle_files):
         p.error("give one label per pickle")
 
+    box = None
+    if a.common_region:
+        all_axes = [read_axes(f) for f in a.pickle_files]
+        box = common_box(all_axes)
+        picks = [[ax[d][r] for d, r in enumerate(box_slices(ax, box))] for ax in all_axes]
+        for k, pick in enumerate(picks[1:], 1):
+            for d in range(3):
+                if len(pick[d]) != len(picks[0][d]) or not np.allclose(pick[d], picks[0][d], rtol=0.0, atol=1e-3 * abs(picks[0][d][1] - picks[0][d][0])):
+                    p.error("the meso cells of %s do not coincide with those of %s in direction %d (different spacing or a non-integer offset)" % (labels[k], labels[0], d))
+        print("common region: x [%.6g, %.6g]  y [%.6g, %.6g]  z [%.6g, %.6g]  (%s cells)" % (
+            box[0][0], box[1][0], box[0][1], box[1][1], box[0][2], box[1][2], 'x'.join(str(len(q)) for q in picks[0])))
+
     results = {}
     for lab, f in zip(labels, a.pickle_files):
-        results[lab] = analyse(f, a)
+        results[lab] = analyse(f, a, box)
         report(lab, results[lab])
 
     print("\n" + "=" * 100 + "\nSUMMARY: joint coefficient of the vB operator (and R2); covariant model: expected +1; lab-frame 3-vector model: expected -1")
@@ -147,7 +195,7 @@ def main():
 
     os.makedirs(a.outdir, exist_ok=True)
     keys = [(v, k) for v in ('cov', 'cov_spatial', 'lab3') for k in ('R2', 'null95')]
-    np.savez(os.path.join(a.outdir, "covariant_emf.npz"), labels=np.array(list(results)), gamma_median=np.array([r['info']['gamma_median'] for r in results.values()]),
+    np.savez(os.path.join(a.outdir, "covariant_emf.npz"), labels=np.array(list(results)), n_points=np.array([r['n_points'] for r in results.values()]), gamma_median=np.array([r['info']['gamma_median'] for r in results.values()]),
              **{"%s_%s" % (v, k): np.array([r['variants'][v][k] if v in r['variants'] else np.nan for r in results.values()]) for v, k in keys},
              **{"%s_coef_%s" % (v, n): np.array([r['variants'][v]['coef'][n] if v in r['variants'] else np.nan for r in results.values()])
                 for v in ('cov', 'cov_spatial', 'lab3') for n in ('vB', 'dens')})
