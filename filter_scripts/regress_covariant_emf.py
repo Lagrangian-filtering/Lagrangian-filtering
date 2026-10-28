@@ -16,7 +16,7 @@ points; it equals the covariant one to O(v^2) and departs from it at relativisti
 
 Uses the central time slice (three slices are needed for the time derivative; with fewer the time derivative is zero and the variant 'cov' is the spatial-only one) and drops one cell at the
 spatial edges. With --common-region every pickle is fitted on the same physical box (the intersection of the meso boxes, after the edge drop; the cells must coincide
-between the pickles, i.e. the same spacing and offsets that are whole cells), so that the coefficients are not affected by the region. Prints one block per pickle and a summary table of the joint coefficients; writes covariant_emf.npz. Does not modify the pickles.
+between the pickles to within --allow-offset meso spacings, 0.5 for grids offset by half a cell), so that the coefficients are not affected by the region. Prints one block per pickle and a summary table of the joint coefficients; writes covariant_emf.npz. Does not modify the pickles.
 """
 import argparse
 import os
@@ -85,35 +85,42 @@ def read_axes(path):
         return trimmed_axes(pickle.load(fh))
 
 
-def common_box(all_axes):
-    """The physical box [lo, hi] per direction common to the meso boxes of all the pickles."""
+def common_selection(all_axes, allow=1e-3):
+    """Index ranges (into the trimmed axes), one triple per pickle, of the cells of the box common to all the meso boxes: the same number of cells in each direction,
+    each cell of a pickle within `allow` meso spacings of the corresponding cell of the first one (allow = 0.5 accepts grids offset by half a cell). Returns (selection, max offset in spacings)."""
     lo = [max(ax[d][0] for ax in all_axes) for d in range(3)]
     hi = [min(ax[d][-1] for ax in all_axes) for d in range(3)]
-    return lo, hi
-
-
-def box_slices(axes, box):
-    """Index ranges (into the trimmed axes) of the cells inside the box, per direction."""
-    lo, hi = box
-    out = []
-    for d, ax in enumerate(axes):
-        tol = 1e-3 * abs(ax[1] - ax[0])
-        idx = np.nonzero((ax >= lo[d] - tol) & (ax <= hi[d] + tol))[0]
-        if idx.size == 0:
+    sel = [[None] * 3 for _ in all_axes]
+    for d in range(3):
+        start, count = [], []
+        for ax in all_axes:
+            sp = ax[d][1] - ax[d][0]
+            i0 = max(int(np.ceil((lo[d] - ax[d][0]) / sp - allow - 1e-6)), 0)
+            n = int(np.floor((hi[d] - ax[d][i0]) / sp + allow + 1e-6)) + 1
+            start.append(i0)
+            count.append(min(n, len(ax[d]) - i0))
+        n = min(count)
+        if n < 1:
             raise SystemExit("the meso boxes of the pickles do not overlap in direction %d" % d)
-        out.append(slice(int(idx[0]), int(idx[-1]) + 1))
-    return out
+        for k, ax in enumerate(all_axes):
+            sel[k][d] = slice(start[k], start[k] + n)
+    worst = 0.0
+    for k, ax in enumerate(all_axes[1:], 1):
+        for d in range(3):
+            sp = ax[d][1] - ax[d][0]
+            ref, cur = all_axes[0][d][sel[0][d]], ax[d][sel[k][d]]
+            worst = max(worst, float(np.max(np.abs(cur - ref))) / sp)
+    return sel, worst
 
 
-def analyse(path, a, box=None):
+def analyse(path, a, rng=None):
     with open(path, 'rb') as fh:
         m = pickle.load(fh)
     sigma2 = a.sigma2_factor * float(m.filter.filter_width) ** 2 / 12.0
     variants, target, info = operators(m, sigma2)
     sl = central(target.shape[:4])
-    if box is not None:
-        axes = trimmed_axes(m)
-        sl = (sl[0],) + tuple(slice(1 + r.start, 1 + r.stop) for r in box_slices(axes, box))
+    if rng is not None:
+        sl = (sl[0],) + tuple(slice(1 + r.start, 1 + r.stop) for r in rng)
     E = target[sl]
     out = {'info': info, 'sigma2': sigma2, 'variants': {}}
     names = ('vB', 'dens')
@@ -161,27 +168,25 @@ def main():
     p.add_argument("--n-null", type=int, default=30)
     p.add_argument("--sigma2-factor", type=float, default=1.0, help="multiply the nominal sigma^2 = W^2/12 (see regress_gradient_model.py)")
     p.add_argument("--common-region", action="store_true", help="fit every pickle on the physical box common to all of them (their meso boxes differ with the run)")
+    p.add_argument("--allow-offset", type=float, default=1e-3, help="with --common-region: largest offset, in meso spacings, between the cells of different pickles (0.5: grids offset by half a cell)")
     p.add_argument("--outdir", default=".")
     a = p.parse_args()
     labels = a.labels or [os.path.basename(f) for f in a.pickle_files]
     if len(labels) != len(a.pickle_files):
         p.error("give one label per pickle")
 
-    box = None
+    sel = [None] * len(a.pickle_files)
     if a.common_region:
         all_axes = [read_axes(f) for f in a.pickle_files]
-        box = common_box(all_axes)
-        picks = [[ax[d][r] for d, r in enumerate(box_slices(ax, box))] for ax in all_axes]
-        for k, pick in enumerate(picks[1:], 1):
-            for d in range(3):
-                if len(pick[d]) != len(picks[0][d]) or not np.allclose(pick[d], picks[0][d], rtol=0.0, atol=1e-3 * abs(picks[0][d][1] - picks[0][d][0])):
-                    p.error("the meso cells of %s do not coincide with those of %s in direction %d (different spacing or a non-integer offset)" % (labels[k], labels[0], d))
-        print("common region: x [%.6g, %.6g]  y [%.6g, %.6g]  z [%.6g, %.6g]  (%s cells)" % (
-            box[0][0], box[1][0], box[0][1], box[1][1], box[0][2], box[1][2], 'x'.join(str(len(q)) for q in picks[0])))
+        sel, worst = common_selection(all_axes, a.allow_offset)
+        if worst > a.allow_offset + 1e-6:
+            p.error("the meso cells of the pickles are offset by up to %.3g spacings (different spacing or a non-integer offset); --allow-offset %.3g is too small" % (worst, a.allow_offset))
+        print("common region: %s cells; cells of the other pickles lie within %.3g meso spacings of those of %s" % (
+            'x'.join(str(r.stop - r.start) for r in sel[0]), worst, labels[0]))
 
     results = {}
-    for lab, f in zip(labels, a.pickle_files):
-        results[lab] = analyse(f, a, box)
+    for lab, f, rng in zip(labels, a.pickle_files, sel):
+        results[lab] = analyse(f, a, rng)
         report(lab, results[lab])
 
     print("\n" + "=" * 100 + "\nSUMMARY: joint coefficient of the vB operator (and R2); covariant model: expected +1; lab-frame 3-vector model: expected -1")

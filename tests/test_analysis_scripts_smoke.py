@@ -166,6 +166,9 @@ class TestAnalysisScriptsSmoke(unittest.TestCase):
         c = self.write_pickle('c.pickle', seed=2, x0=0.435)                       # half-cell offset: cells do not coincide
         with self.assertRaises(SystemExit):
             self.run_script('regress_covariant_emf.py', a, c, '--common-region', *args)
+        self.run_script('regress_covariant_emf.py', a, c, '--common-region', '--allow-offset', '0.5', *args)
+        with np.load(os.path.join(out, 'covariant_emf.npz')) as _z:
+            self.assertEqual(list(_z['n_points']), [9 * 12 * 6] * 2)
 
     def test_regress_stress_model(self):
         out = os.path.join(self.tmp, 'stress')
