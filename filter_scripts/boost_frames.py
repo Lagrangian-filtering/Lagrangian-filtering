@@ -13,7 +13,9 @@ gamma (T' + beta z'_min) - 2 dt to gamma (T' + beta z'_max) + 2 dt (cubic interp
 
 Why many closely spaced frames: the pipeline interpolates the stored snapshots linearly in time, and the filter's quadrature points lie off the snapshot time by gamma_obs v W/2 (observer
 velocity v). With snapshots far apart in the boosted frame (a pattern moving at v = 0.8 shifts by tens of cells between them) a few per cent of a displaced copy of the flow enters the filtered
-fields; a cluster of frames a few hundredths apart around the central time does not have this error. A cluster with the spacing of the earlier boosted runs shows the effect: --spacing 0.8333, --n-side 3.
+fields; a cluster of frames a few hundredths apart around the central time does not have this error. A cluster with the spacing of the earlier boosted runs shows the effect: --spacing 0.8333, --n-side 1.
+Rule of thumb: the linear interpolation in time leaves an error of order (v dt / l)^2 / 8 of the fields (l the scale of the structure), so choose the spacing so that the pattern moves by at most about a cell
+between the frames, dt ~ dx / v (0.005 for beta 0.8 at 256^3), and let the cluster cover the reach of the fastest observers (the window check of make_mhd_config.py refuses a cluster that is too short).
 Does not modify RESTDIR.
 """
 import argparse
